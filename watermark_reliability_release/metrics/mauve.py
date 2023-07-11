@@ -18,7 +18,7 @@ def get_mauve_score(
     print(f"initial p_text: {len(p_text)}, q_text: {len(q_text)}")
 
     ## preprocess: truncating the texts to the same length
-    tokenizer = AutoTokenizer.from_pretrained(featurize_model_name)
+    tokenizer = AutoTokenizer.from_pretrained(featurize_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     # tokenize by GPT2 first.
     x = tokenizer(p_text, truncation=True, max_length=max_len)["input_ids"]
     y = tokenizer(q_text, truncation=True, max_length=max_len)["input_ids"]

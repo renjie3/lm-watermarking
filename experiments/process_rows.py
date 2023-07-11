@@ -127,7 +127,7 @@ def load_all_datasets(run_names: list[str]=None,
         # though tbh it would be odd if they're not the same, but you can check that at the end
         if apply_metric_func:
 
-            tokenizer = AutoTokenizer.from_pretrained(gen_table_meta["model_name"])
+            tokenizer = AutoTokenizer.from_pretrained(gen_table_meta["model_name"], cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
 
             comp_bl_metrics = partial(
                 compute_bl_metrics,

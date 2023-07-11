@@ -61,9 +61,11 @@ class BlacklistLogitsProcessor(LogitsProcessor):
     """
 
     def __init__(self, 
-                bad_words_ids: List[List[int]], 
+                # bad_words_ids: List[List[int]], 
+                bad_words_ids: List,
                 eos_token_id: int,
-                vocab: list[int], 
+                # vocab: list[int],
+                vocab: list, 
                 vocab_size: int,
                 bl_proportion: float=0.5,
                 bl_logit_bias: float=1.0,
@@ -199,7 +201,8 @@ class BlacklistLogitsProcessor(LogitsProcessor):
 
         return scores
 
-    def _prepare_bad_words(self, bad_words_ids: List[List[int]]) -> list[int]:
+    # def _prepare_bad_words(self, bad_words_ids: List[List[int]]) -> list[int]:
+    def _prepare_bad_words(self, bad_words_ids: List) -> list:
         bad_words_ids = list(filter(lambda bad_token_seq: bad_token_seq != [self.eos_token_id], bad_words_ids))
         return bad_words_ids
         # used to have more logic, not used now

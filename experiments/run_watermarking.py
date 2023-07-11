@@ -24,9 +24,10 @@ import matplotlib.pyplot as plt
 # TODO change to passing as an arg to the model load fn
 USER = "jkirchen"
 # Huggingface cache
-HF_HOME=f"/cmlscratch/{USER}/.cache/huggingface"
+# HF_HOME=f"/cmlscratch/{USER}/.cache/huggingface"
 # HF_HOME=f"/scratch0/{USER}/.cache/huggingface"
 # HF_HOME=f"/scratch1/{USER}/.cache/huggingface"
+HF_HOME="/egr/research-dselab/renjie3/renjie/LLM/cache"
 os.environ["HF_HOME"] = HF_HOME
 
 print(os.environ["HF_HOME"])
@@ -92,11 +93,11 @@ def main(args):
     hf_model_name = args.model_name
 
     if "t5" in hf_model_name or "T0" in hf_model_name:
-        model = AutoModelForSeq2SeqLM.from_pretrained(hf_model_name)
+        model = AutoModelForSeq2SeqLM.from_pretrained(hf_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     else:
-        model = AutoModelForCausalLM.from_pretrained(hf_model_name)
+        model = AutoModelForCausalLM.from_pretrained(hf_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
 
-    tokenizer = AutoTokenizer.from_pretrained(hf_model_name)
+    tokenizer = AutoTokenizer.from_pretrained(hf_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
 
     # defaults to device 0
     # will need to use 'parallelize' for multi-gpu sharding
@@ -434,8 +435,8 @@ def main(args):
     oracle_model_name = args.oracle_model_name
     print(f"Loading oracle model: {oracle_model_name}")
     
-    oracle_tokenizer = AutoTokenizer.from_pretrained(oracle_model_name)
-    oracle_model = AutoModelForCausalLM.from_pretrained(oracle_model_name).to(device)
+    oracle_tokenizer = AutoTokenizer.from_pretrained(oracle_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
+    oracle_model = AutoModelForCausalLM.from_pretrained(oracle_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache").to(device)
     oracle_model.eval()
 
     # construct fluency/ppl partial

@@ -70,8 +70,8 @@ def split_files(model_path, tmp_path, split_size):
 
 
 def apply_delta_low_cpu_mem(base_model_path, target_model_path, delta_path):
-    delta_tokenizer = AutoTokenizer.from_pretrained(delta_path, use_fast=False)
-    delta_config = AutoConfig.from_pretrained(delta_path)
+    delta_tokenizer = AutoTokenizer.from_pretrained(delta_path, use_fast=False, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
+    delta_config = AutoConfig.from_pretrained(delta_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
 
     if os.path.exists(target_model_path):
         shutil.rmtree(target_model_path)
@@ -124,12 +124,12 @@ def apply_delta(base_model_path, target_model_path, delta_path):
     print(f"Loading the delta weights from {delta_path}")
     delta_tokenizer = AutoTokenizer.from_pretrained(delta_path, use_fast=False)
     delta = AutoModelForCausalLM.from_pretrained(
-        delta_path, torch_dtype=torch.float16, low_cpu_mem_usage=True
+        delta_path, torch_dtype=torch.float16, low_cpu_mem_usage=True, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache"
     )
 
     print(f"Loading the base model from {base_model_path}")
     base = AutoModelForCausalLM.from_pretrained(
-        base_model_path, torch_dtype=torch.float16, low_cpu_mem_usage=True
+        base_model_path, torch_dtype=torch.float16, low_cpu_mem_usage=True, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache"
     )
 
     print("Applying the delta")

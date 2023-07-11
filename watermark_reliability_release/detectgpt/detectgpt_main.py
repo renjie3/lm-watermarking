@@ -700,7 +700,7 @@ if __name__ == "__main__":
         print("Using non-fast tokenizer for OPT")
         optional_tok_kwargs["fast"] = False
     base_model = transformers.AutoModelForCausalLM.from_pretrained(
-        args.base_model_name, **half_kwargs
+        args.base_model_name, , cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache", **half_kwargs
     )
     base_model.eval()
 
@@ -709,17 +709,17 @@ if __name__ == "__main__":
         from transformers import LlamaTokenizer
 
         base_tokenizer = LlamaTokenizer.from_pretrained(
-            args.base_model_name, padding_side="left", **optional_tok_kwargs
+            args.base_model_name, padding_side="left", cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache", **optional_tok_kwargs
         )
     else:
         base_tokenizer = transformers.AutoTokenizer.from_pretrained(
-            args.base_model_name, padding_side="left", **optional_tok_kwargs
+            args.base_model_name, padding_side="left", cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache", **optional_tok_kwargs
         )
     base_tokenizer.pad_token_id = base_tokenizer.eos_token_id
 
     print(f"Loading mask filling model {args.mask_filling_model_name}...")
     mask_model = transformers.AutoModelForSeq2SeqLM.from_pretrained(
-        args.mask_filling_model_name,
+        args.mask_filling_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache",
         **int8_kwargs,
         **half_kwargs,
         trust_remote_code="glm" in args.mask_filling_model_name,
@@ -739,7 +739,7 @@ if __name__ == "__main__":
     # raise ValueError(f"Mask model cannot handle input longer then {n_positions}. Input token length: {args.token_len}")
     # preproc_tokenizer = transformers.AutoTokenizer.from_pretrained('t5-small', model_max_length=n_positions)
     mask_tokenizer = transformers.AutoTokenizer.from_pretrained(
-        args.mask_filling_model_name,
+        args.mask_filling_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache",
         model_max_length=n_positions,
         trust_remote_code="glm" in args.mask_filling_model_name,
     )

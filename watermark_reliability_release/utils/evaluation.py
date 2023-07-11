@@ -151,19 +151,19 @@ def load_tokenizer(args):
     model_name = args.model_name_or_path
     print(f"Loading tokenizer for: {model_name}")
     if "llama" in model_name:
-        tokenizer = LlamaTokenizer.from_pretrained(model_name)
+        tokenizer = LlamaTokenizer.from_pretrained(model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
         tokenizer.pad_token_id = 0  # unk
     else:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     return tokenizer
 
 
 def load_detector(args):
     if "llama" in args.model_name_or_path:
-        tokenizer = LlamaTokenizer.from_pretrained(args.model_name_or_path)
+        tokenizer = LlamaTokenizer.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
         tokenizer.pad_token_id = 0  # unk
     else:
-        tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
 
     device = "cuda" if (args.use_gpu and torch.cuda.is_available()) else "cpu"
 
@@ -378,17 +378,17 @@ def load_oracle_model(args):
     print(f"Loading oracle model: {oracle_model_name}")
     if args.load_fp16:
         oracle_model = AutoModelForCausalLM.from_pretrained(
-            oracle_model_name, torch_dtype=torch.float16, device_map="auto"
+            oracle_model_name, torch_dtype=torch.float16, device_map="auto", cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache"
         )
     else:
-        oracle_model = AutoModelForCausalLM.from_pretrained(oracle_model_name)
+        oracle_model = AutoModelForCausalLM.from_pretrained(oracle_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     if "llama" in oracle_model_name:
-        oracle_tokenizer = LlamaTokenizer.from_pretrained(oracle_model_name)
+        oracle_tokenizer = LlamaTokenizer.from_pretrained(oracle_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
         oracle_model.config.pad_token_id = oracle_tokenizer.pad_token_id = 0  # unk
         oracle_model.config.bos_token_id = 1
         oracle_model.config.eos_token_id = 2
     else:
-        oracle_tokenizer = AutoTokenizer.from_pretrained(oracle_model_name)
+        oracle_tokenizer = AutoTokenizer.from_pretrained(oracle_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     if args.use_gpu:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         if not args.load_fp16:

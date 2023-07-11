@@ -15,6 +15,8 @@
 # limitations under the License.
 
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+
 import argparse
 from argparse import Namespace
 from pprint import pprint
@@ -177,12 +179,12 @@ def load_model(args):
     args.is_seq2seq_model = any([(model_type in args.model_name_or_path) for model_type in ["t5","T0"]])
     args.is_decoder_only_model = any([(model_type in args.model_name_or_path) for model_type in ["gpt","opt","bloom"]])
     if args.is_seq2seq_model:
-        model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name_or_path)
+        model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     elif args.is_decoder_only_model:
         if args.load_fp16:
-            model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path,torch_dtype=torch.float16, device_map='auto')
+            model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path,torch_dtype=torch.float16, device_map='auto', cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
         else:
-            model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path)
+            model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     else:
         raise ValueError(f"Unknown model type: {args.model_name_or_path}")
 
@@ -196,7 +198,7 @@ def load_model(args):
         device = "cpu"
     model.eval()
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
 
     return model, tokenizer, device
 

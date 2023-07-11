@@ -49,8 +49,8 @@ def generate_dipper_paraphrases(
     print(f"Skipping {num_output_points} points")
 
     time1 = time.time()
-    tokenizer = T5Tokenizer.from_pretrained("google/t5-v1_1-xxl")
-    model = T5ForConditionalGeneration.from_pretrained(model_name)
+    tokenizer = T5Tokenizer.from_pretrained("google/t5-v1_1-xxl", cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
+    model = T5ForConditionalGeneration.from_pretrained(model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     print("Model loaded in ", time.time() - time1)
     # model.half()
     model.cuda()

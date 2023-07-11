@@ -48,14 +48,14 @@ def load_model(args):
         [(model_type in args.model_name_or_path) for model_type in ["gpt", "opt", "bloom", "llama"]]
     )
     if args.is_seq2seq_model:
-        model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name_or_path)
+        model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     elif args.is_decoder_only_model:
         if args.load_fp16:
             model = AutoModelForCausalLM.from_pretrained(
-                args.model_name_or_path, torch_dtype=torch.float16, device_map="auto"
+                args.model_name_or_path, torch_dtype=torch.float16, device_map="auto", cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache"
             )
         else:
-            model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path)
+            model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     else:
         raise ValueError(f"Unknown model type: {args.model_name_or_path}")
 
@@ -78,14 +78,14 @@ def load_model(args):
 
     if "llama" in args.model_name_or_path:
         tokenizer = LlamaTokenizer.from_pretrained(
-            args.model_name_or_path, padding_side=padding_side
+            args.model_name_or_path, padding_side=padding_side, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache"
         )
         model.config.pad_token_id = tokenizer.pad_token_id = 0  # unk
         model.config.bos_token_id = 1
         model.config.eos_token_id = 2
     else:
         tokenizer = AutoTokenizer.from_pretrained(
-            args.model_name_or_path, padding_side=padding_side
+            args.model_name_or_path, padding_side=padding_side, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache"
         )
 
     args.model_max_length = model.config.max_position_embeddings
