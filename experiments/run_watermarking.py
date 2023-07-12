@@ -117,10 +117,14 @@ def main(args):
                                 subsets=subsets,
                                 streaming=True,
                                 split=None,
+                                cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache",
                                 ignore_verifications=True)["train"]
     else:
-        dataset = load_dataset(dataset_name, dataset_config_name, split="train", streaming=True)
+        dataset = load_dataset(dataset_name, dataset_config_name, split="train", streaming=True, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache",)
     
+    # dataset.save_to_disk("/egr/research-dselab/renjie3/renjie/LLM/cache")
+    # input("check")
+
     # log an example
     ds_iterator = iter(dataset)
     idx = 75 # if this is c4, it's the schumacher example lol
@@ -131,6 +135,9 @@ def main(args):
 
     example = next(ds_iterator)
     print(example)
+
+    # print(example.keys())
+    # input("check exmaple")
 
     ###########################################################################
     # Construct the blacklist processor/sampler
@@ -296,6 +303,19 @@ def main(args):
                                                             batched=False, 
                                                             with_indices=True, 
                                                             remove_columns=columns_to_remove)
+
+    # # log an example
+    # ds_iterator = iter(generations_dataset)
+    # idx = 3 # if this is c4, it's the schumacher example lol
+    # i = 0
+    # while i < idx: 
+    #     print(i)
+    #     next(ds_iterator)
+    #     i += 1
+
+    # example = next(ds_iterator)
+    # print(example)
+    # input("check output")
 
     # # filter the dataset a last time based on the lengths of the outputs of the model
     # output_length_filtered_dataset = generations_dataset.filter(output_check, 

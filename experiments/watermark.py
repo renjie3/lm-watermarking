@@ -409,7 +409,10 @@ def generate_completions(example: dict,
             # set_seed(1234) # debugging the error when using sampling # leaving this off for now
 
             start_generation = time.time()
+            # print(torch.max(inputs))
+            # print(inputs.shape)
             outputs_no_bl = no_bl_partial(inputs.to(model.device))
+            # outputs_no_bl = no_bl_partial(inputs[:, :30].to(model.device))
             example["no_bl_gen_time"] = time.time() - start_generation
 
             # set_seed(1234) # debugging the error when using sampling
