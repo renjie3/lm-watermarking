@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from types import NoneType
+# from types import NoneType
 
 from typing import Union
 import os
@@ -1063,19 +1063,19 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--seeding_scheme",
-        type=Union[str, NoneType],
+        type=str,
         default=None,
         help="Seeding scheme to use to generate the greenlists at each generation and verification step.",
     )
     parser.add_argument(
         "--gamma",
-        type=Union[float, NoneType],
+        type=float,
         default=None,
         help="The fraction of the vocabulary to partition into the greenlist at each generation and verification step.",
     )
     parser.add_argument(
         "--normalizers",
-        type=Union[str, NoneType],
+        type=str,
         default=None,
         help="Single or comma separated list of the preprocessors/normalizer names to use when performing watermark detection.",
     )

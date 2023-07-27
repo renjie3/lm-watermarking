@@ -5,7 +5,7 @@ Can be hooked into existing WatermarkLogitsProcessor as modified base class Wate
 
 import torch
 from itertools import combinations
-from functools import cache
+from functools import lru_cache
 
 # Key properties of a hashing scheme
 props = {
@@ -157,7 +157,7 @@ def _hashint_avalanche_tensor(integer_tensor: torch.LongTensor):
     return i.to(torch.long)
 
 
-@cache
+@lru_cache(maxsize=128)
 def _hashint_avalanche_int(integer: int):
     """http://burtleburtle.net/bob/hash/integer.html, runs in base python, caches based on access.
     Does this make sense for signed 64bit ints?"""

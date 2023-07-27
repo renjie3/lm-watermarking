@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import torch
+import torch.nn.functional as F
 
 # HF classes
 
@@ -28,6 +29,7 @@ from transformers import (
     LlamaTokenizer,
     AutoModelForSeq2SeqLM,
     AutoModelForCausalLM,
+    AutoModel,
     DataCollatorWithPadding,
 )
 
@@ -92,6 +94,43 @@ def load_model(args):
 
     return model, tokenizer, device
 
+def load_semantic_model(args):
+    """Load and return the model and tokenizer"""
+
+    if args.use_gpu:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if args.load_fp16:
+            pass
+        else:
+            model = model.to(device)
+    else:
+        device = "cpu"
+
+    # #Mean Pooling - Take attention mask into account for correct averaging
+    # def mean_pooling(model_output, attention_mask):
+    #     token_embeddings = model_output[0] #First element of model_output contains all token embeddings
+    #     input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    #     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+
+    # Load model from HuggingFace Hub
+    tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2', cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
+    model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2', cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache").to(device)
+
+    # # Tokenize sentences
+    # encoded_input = tokenizer(sentences, padding=True, truncation=True, return_tensors='pt')
+
+    # # Compute token embeddings
+    # with torch.no_grad():
+    #     model_output = model(**encoded_input)
+
+    # # Perform pooling
+    # sentence_embeddings = mean_pooling(model_output, encoded_input['attention_mask'])
+
+    # # Normalize embeddings
+    # sentence_embeddings = F.normalize(sentence_embeddings, p=2, dim=1)
+
+    return model, tokenizer, device
+
 
 def add_idx(example, idx):
     example.update({"idx": idx})
@@ -146,6 +185,37 @@ def load_hf_dataset(args):
                 "ref_output_col_name": None,
             }
         )
+    elif "json" in dataset_name:
+        dataset = load_dataset(
+            "/egr/research-dselab/renjie3/renjie/LLM/watermark_LLM/data",
+            data_files="c4-train.0000*-of-00512.json",
+            split=args.dataset_split,
+            streaming=args.stream_dataset,
+        )
+        if "c4" in dataset_name:
+            args.__dict__.update(
+                {
+                    "truncate_input_for_prompt": True,
+                    "input_col_name": "text",
+                    "ref_output_col_name": None,
+                }
+            )
+            args.columns_to_remove = list(
+                set(args.columns_to_remove + ["text", "timestamp", "url"])
+            )
+        elif "pile" in dataset_name:
+            args.__dict__.update(
+                {
+                    "truncate_input_for_prompt": True,
+                    "input_col_name": "text",
+                    "ref_output_col_name": None,
+                }
+            )
+            args.columns_to_remove = list(set(args.columns_to_remove + ["text", "meta"]))
+        else:
+            raise NotImplementedError(
+                f"Dataset {dataset_name} not yet supported. Please add specs to load_hf_dataset function."
+            )
     else:
         dataset = load_dataset(
             dataset_name,
@@ -458,6 +528,13 @@ def generate(
     args=None,
 ):
     input_ids = collate_batch(input_ids=examples["input_ids"], collator=data_collator).to(device)
+    # print(examples.keys())
+    # print(examples['text'][0])
+    # print(examples['truncated_input'][0])
+    # print(examples['prompt_length'])
+
+    # print(input_ids.shape)
+    # input("check")
 
     with torch.no_grad():
         if args.generation_seed is not None:
@@ -500,3 +577,86 @@ def generate(
         ]
 
     return examples
+
+def generate_embedding_pairs(
+    examples,
+    sem_model=None,
+    data_collator=None,
+    watermark_processor=None,
+    tokenizer=None,
+    device=None,
+    args=None,
+):
+    # input_ids = collate_batch(input_ids=examples["text"], collator=data_collator).to(device)
+    # print(len(examples["text"]))
+    # print(input_ids)
+    # input("check")
+
+    tokenized_input = tokenizer(examples["text"], return_tensors="pt", padding=True, truncation=True, max_length=512).to(device)
+    # print(type(tokenized))
+    # print(tokenized_input.keys())
+    # print(tokenized_input["input_ids"].shape)
+    # print(tokenized_input["token_type_ids"].shape)
+    # input("check")
+
+
+    # from transformers import AutoTokenizer, AutoModel
+    # import torch
+    # import torch.nn.functional as F
+
+    #Mean Pooling - Take attention mask into account for correct averaging
+    def mean_pooling(model_output, attention_mask):
+        token_embeddings = model_output[0] #First element of model_output contains all token embeddings
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+
+
+    # # Sentences we want sentence embeddings for
+    # sentences = ['This is an example sentence', 'Each sentence is converted']
+
+    # # Load model from HuggingFace Hub
+    # tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+    # model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+
+    # # Tokenize sentences
+    # encoded_input = tokenizer(sentences, padding=True, truncation=True, return_tensors='pt')
+
+    # Compute token embeddings
+    with torch.no_grad():
+        model_output = sem_model(**tokenized_input)
+
+    sentence_embeddings = mean_pooling(model_output, tokenized_input['attention_mask'])
+
+    # Normalize embeddings
+    sentence_embeddings = F.normalize(sentence_embeddings, p=2, dim=1)
+
+    # print(sentence_embeddings.shape)
+    # input("check")
+
+    # if args.is_decoder_only_model:
+    #     # need to isolate the newly generated tokens
+    #     output_without_watermark = output_without_watermark[:, input_ids.shape[-1] :]
+    #     output_with_watermark = output_with_watermark[:, input_ids.shape[-1] :]
+
+    # decoded_output_without_watermark = tokenizer.batch_decode(
+    #     output_without_watermark, skip_special_tokens=True
+    # )
+    # decoded_output_with_watermark = tokenizer.batch_decode(
+    #     output_with_watermark, skip_special_tokens=True
+    # )
+    examples.update(
+        {
+            "sentence_embeddings": sentence_embeddings.detach()
+        }
+    )
+
+    return {k: [v] for k, v in examples.items()}
+
+    # if watermark_processor.spike_entropies is not None:
+    #     examples["spike_entropies"] = watermark_processor._get_and_clear_stored_spike_ents()
+    #     examples["spike_entropies"] = [
+    #         ents[:num_toks]
+    #         for ents, num_toks in zip(examples["spike_entropies"], examples["w_wm_output_length"])
+    #     ]
+
+    # return examples
