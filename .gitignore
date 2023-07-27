@@ -30,6 +30,9 @@ MANIFEST
 experiments/wandb
 experiments/results
 experiments/logfile
+experiments/gpt_attack.py
+watermark_reliability_release/results
+watermark_reliability_release/metrics
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

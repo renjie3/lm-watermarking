@@ -3,7 +3,7 @@ import openai
 from io_utils import read_jsonlines, read_json, write_jsonlines
 from datasets import Dataset, concatenate_datasets
 
-openai.api_key = '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'
+openai.api_key = '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'
 
 def gpt_attack(example, no_wm_attack=False):
     # assert attack_prompt, "Prompt must be provided for GPT attack"
