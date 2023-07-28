@@ -93,7 +93,11 @@ def main(args):
 
     generate_embedding_pairs_partial = partial(generate_embedding_pairs, sem_model=sem_model, tokenizer=sem_tokenizer, device=device, args=args,)
 
-    sem_embedding_dataset = dataset.map(generate_embedding_pairs_partial, batched=True, batch_size=args.generation_batch_size)
+    sem_embedding_dataset = dataset.map(generate_embedding_pairs_partial, batched=False)
+
+    def group_batch(examples):
+        return {k: [v] for k, v in examples.items()}
+    sem_embedding_batch_dataset = sem_embedding_dataset.map(group_batch, batched=True, batch_size=args.generation_batch_size)
 
     ###########################################################################
     # Main loop - actually executes the generation pipeline.
@@ -102,7 +106,7 @@ def main(args):
     ###########################################################################
 
     processed_examples = []
-    ds_iterator = iter(sem_embedding_dataset)
+    # ds_iterator = iter(sem_embedding_batch_dataset)
     i = 0
     total_steps = 0
     pbar = tqdm(total=args.min_generations)
@@ -114,7 +118,7 @@ def main(args):
     # optimizer = optim.SGD(cl_mlp.parameters(), lr=0.05, weight_decay=1e-4, momentum=0.9)
 
     for epoch_id in range(args.cl_epochs):
-        ds_iterator = iter(sem_embedding_dataset)
+        ds_iterator = iter(sem_embedding_batch_dataset)
         while True:
             try:
                 ex = next(ds_iterator)
@@ -124,7 +128,7 @@ def main(args):
             except StopIteration:
                 break
 
-            pos_1 = ex["sentence_embeddings"]
+            pos_1 = torch.cat(ex["sentence_embeddings"], dim=0)
             pos_2 = pos_1 + torch.normal(0, 0.01, pos_1.shape).to(device)
             loss, batch_size = contrastive_train_batch(cl_mlp, pos_1.detach(), pos_2.detach(), optimizer, temperature=0.5)
             emb_loss, _ = infoNCE_loss(pos_1, pos_2, temperature=0.5)

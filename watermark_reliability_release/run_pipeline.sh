@@ -15,8 +15,8 @@ echo "Running generation pipeline with output dir: $GENERATION_OUTPUT_DIR"
 
 # generation_pipeline.py semantic_train_pipeline
 
-CUDA_VISIBLE_DEVICES=3 HF_HOME="/egr/research-dselab/renjie3/renjie/LLM/cache" python generation_pipeline.py \
-    --model_name=facebook/opt-1.3b \
+CUDA_VISIBLE_DEVICES=1 HF_HOME="/egr/research-dselab/renjie3/renjie/LLM/cache" python generation_pipeline.py \
+    --model_name facebook/opt-1.3b \
     --dataset_name=json_c4 \
     --dataset_config_name=realnewslike \
     --max_new_tokens=200 \
@@ -33,6 +33,7 @@ CUDA_VISIBLE_DEVICES=3 HF_HOME="/egr/research-dselab/renjie3/renjie/LLM/cache" p
     --verbose=True \
     --generation_batch_size=4 \
     --stream_dataset=True \
+    --load_fp16=False \
     --output_dir=$GENERATION_OUTPUT_DIR 
 
 # CUDA_VISIBLE_DEVICES=3 HF_HOME="/egr/research-dselab/renjie3/renjie/LLM/cache" python semantic_train_pipeline.py \
@@ -52,8 +53,9 @@ CUDA_VISIBLE_DEVICES=3 HF_HOME="/egr/research-dselab/renjie3/renjie/LLM/cache" p
 #     --wandb=False \
 #     --cl_lr=1e-3 \
 #     --cl_mlp_feat_dim=2 \
+#     --load_fp16=False \
 #     --verbose=True \
-#     --generation_batch_size=256 \
+#     --generation_batch_size=128 \
 #     --stream_dataset=True \
 #     --output_dir=$GENERATION_OUTPUT_DIR 
 

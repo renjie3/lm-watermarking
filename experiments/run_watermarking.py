@@ -1,4 +1,5 @@
 # Basic imports
+import wandb
 import sys
 import os
 import argparse
@@ -16,7 +17,6 @@ import torch
 from torch import Tensor
 from tokenizers import Tokenizer
 
-import wandb
 import matplotlib.pyplot as plt
 
 # cache path before HF imports just for kicks
@@ -92,6 +92,7 @@ def main(args):
     ###########################################################################
     hf_model_name = args.model_name
 
+    print(hf_model_name)
     if "t5" in hf_model_name or "T0" in hf_model_name:
         model = AutoModelForSeq2SeqLM.from_pretrained(hf_model_name, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
     else:
@@ -104,6 +105,17 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     model.eval()
+
+            # gen_kwargs.update(output_hidden_states=True)
+    test_sample = ["Beginners BBQ Class Taking Place in Missoula! Do you want to get better at making delicious BBQ? You will have the opportunity, put this on your calendar now. Thursday, September 22nd join World Class BBQ Champion, Tony Balay from Lonestar Smoke Rangers. He will be teaching a beginner level class for everyone who wants to get better with their culinary skills. He will teach you everything you need to know to compete in a KCBS BBQ competition, including"]
+
+    test_input_ids = tokenizer(test_sample, return_tensors="pt").to(device)
+    # print(test_input_ids)
+    output = model.generate(**test_input_ids, max_length=1024)
+    print(len(output[0]))
+    ex = tokenizer.batch_decode(output)
+    print(ex)
+    import pdb; pdb.set_trace()
 
     ###########################################################################
     # Load the dataset

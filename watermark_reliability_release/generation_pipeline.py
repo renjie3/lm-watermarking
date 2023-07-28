@@ -91,6 +91,17 @@ def main(args):
 
     model, tokenizer, device = load_model(args)
 
+    # # gen_kwargs.update(output_hidden_states=True)
+    # test_sample = ["Beginners BBQ Class Taking Place in Missoula! Do you want to get better at making delicious BBQ? You will have the opportunity, put this on your calendar now. Thursday, September 22nd join World Class BBQ Champion, Tony Balay from Lonestar Smoke Rangers. He will be teaching a beginner level class for everyone who wants to get better with their culinary skills. He will teach you everything you need to know to compete in a KCBS BBQ competition, including"]
+
+    # test_input_ids = tokenizer(test_sample, return_tensors="pt").to(device)
+    # # print(test_input_ids)
+    # output = model.generate(**test_input_ids, max_length=1024)
+    # print(len(output[0]))
+    # ex = tokenizer.batch_decode(output)
+    # print(ex)
+    # import pdb; pdb.set_trace()
+
     ###########################################################################
     # Configure the prompt construction partial
     ###########################################################################
@@ -224,6 +235,26 @@ def main(args):
     # filter the rows of the dataset based on length checks for the tokenized prompts and baseline completions
     dataset_input_len_filtered = dataset_w_prompts.filter(input_check, batched=False)
 
+    # myiter = iter(dataset_w_prompts)
+    # next(myiter)["input_ids"]
+    # next(myiter)["input_ids"]
+    # next(myiter)["input_ids"]
+    # ex = next(myiter)["input_ids"].to(device)
+    # # print(ex)
+
+    # output = model.generate(ex, output_hidden_states=True, max_new_tokens=1024, return_dict_in_generate=True, use_cache=True)
+    # print(output.keys())
+    # print(type(output))
+    # print(type(output["hidden_states"][0]))
+    # print(len(output["hidden_states"]))
+    # print(len(output["hidden_states"][0]))
+    # # for i in range(len(output["hidden_states"])):
+    # #     print(output["hidden_states"][i][24].shape)
+    #     # input("check")
+    # # https://huggingface.co/docs/transformers/v4.31.0/en/internal/generation_utils#transformers.generation.BeamSampleDecoderOnlyOutput
+    # # https://huggingface.co/docs/transformers/model_doc/opt
+    # import pdb; pdb.set_trace()
+
     # need to remove the input tensor column after this map
     # bc it persists between the prompt creation and generation maps
     columns_to_remove = args.columns_to_remove + ["input_ids"]
@@ -250,6 +281,7 @@ def main(args):
     while i < args.min_generations:
         try:
             ex = next(ds_iterator)
+            input("checl")
             total_steps += 1
         except StopIteration:
             break

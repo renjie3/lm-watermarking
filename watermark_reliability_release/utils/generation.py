@@ -90,6 +90,20 @@ def load_model(args):
             args.model_name_or_path, padding_side=padding_side, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache"
         )
 
+    # # model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache").to(device)
+    # # tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
+
+    # # gen_kwargs.update(output_hidden_states=True)
+    # test_sample = ["Beginners BBQ Class Taking Place in Missoula! Do you want to get better at making delicious BBQ? You will have the opportunity, put this on your calendar now. Thursday, September 22nd join World Class BBQ Champion, Tony Balay from Lonestar Smoke Rangers. He will be teaching a beginner level class for everyone who wants to get better with their culinary skills. He will teach you everything you need to know to compete in a KCBS BBQ competition, including"]
+
+    # test_input_ids = tokenizer(test_sample, return_tensors="pt").to(device)
+    # # print(test_input_ids)
+    # output = model.generate(**test_input_ids, max_length=1024)
+    # print(len(output[0]))
+    # ex = tokenizer.batch_decode(output)
+    # print(ex)
+    # import pdb; pdb.set_trace()
+
     args.model_max_length = model.config.max_position_embeddings
 
     return model, tokenizer, device
@@ -544,6 +558,8 @@ def generate(
         if args.generation_seed is not None:
             torch.manual_seed(args.generation_seed)
         output_with_watermark = generate_with_watermark(input_ids=input_ids)
+        # print(output_with_watermark)
+        # input("check")
 
     if args.is_decoder_only_model:
         # need to isolate the newly generated tokens
@@ -592,17 +608,12 @@ def generate_embedding_pairs(
     # print(input_ids)
     # input("check")
 
-    tokenized_input = tokenizer(examples["text"], return_tensors="pt", padding=True, truncation=True, max_length=512).to(device)
+    tokenized_input = tokenizer(examples["text"], return_tensors="pt", padding=True, truncation=True, max_length=2048).to(device)
     # print(type(tokenized))
     # print(tokenized_input.keys())
     # print(tokenized_input["input_ids"].shape)
     # print(tokenized_input["token_type_ids"].shape)
     # input("check")
-
-
-    # from transformers import AutoTokenizer, AutoModel
-    # import torch
-    # import torch.nn.functional as F
 
     #Mean Pooling - Take attention mask into account for correct averaging
     def mean_pooling(model_output, attention_mask):
@@ -610,53 +621,29 @@ def generate_embedding_pairs(
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
         return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
-
-    # # Sentences we want sentence embeddings for
-    # sentences = ['This is an example sentence', 'Each sentence is converted']
-
-    # # Load model from HuggingFace Hub
-    # tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
-    # model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
-
-    # # Tokenize sentences
-    # encoded_input = tokenizer(sentences, padding=True, truncation=True, return_tensors='pt')
-
     # Compute token embeddings
     with torch.no_grad():
         model_output = sem_model(**tokenized_input)
 
-    sentence_embeddings = mean_pooling(model_output, tokenized_input['attention_mask'])
+    # print(type(model_output))
+    # print(model_output.keys())
+    # print(type(model_output[0]))
+    # print((model_output["past_key_values"]))
+    # Finally I found which is the logits used to predict the next token https://github.com/huggingface/transformers/blob/v4.31.0/src/transformers/generation/utils.py#L3269 https://github.com/huggingface/transformers/blob/main/src/transformers/models/opt/modeling_opt.py#L956
 
+    sentence_embeddings = model_output[0][:, -1, :]
+    # print(torch.norm(sentence_embeddings, p=2, dim=1))
     # Normalize embeddings
     sentence_embeddings = F.normalize(sentence_embeddings, p=2, dim=1)
 
     # print(sentence_embeddings.shape)
     # input("check")
 
-    # if args.is_decoder_only_model:
-    #     # need to isolate the newly generated tokens
-    #     output_without_watermark = output_without_watermark[:, input_ids.shape[-1] :]
-    #     output_with_watermark = output_with_watermark[:, input_ids.shape[-1] :]
-
-    # decoded_output_without_watermark = tokenizer.batch_decode(
-    #     output_without_watermark, skip_special_tokens=True
-    # )
-    # decoded_output_with_watermark = tokenizer.batch_decode(
-    #     output_with_watermark, skip_special_tokens=True
-    # )
     examples.update(
         {
             "sentence_embeddings": sentence_embeddings.detach()
         }
     )
 
-    return {k: [v] for k, v in examples.items()}
-
-    # if watermark_processor.spike_entropies is not None:
-    #     examples["spike_entropies"] = watermark_processor._get_and_clear_stored_spike_ents()
-    #     examples["spike_entropies"] = [
-    #         ents[:num_toks]
-    #         for ents, num_toks in zip(examples["spike_entropies"], examples["w_wm_output_length"])
-    #     ]
-
-    # return examples
+    # return {k: [v] for k, v in examples.items()}
+    return examples
