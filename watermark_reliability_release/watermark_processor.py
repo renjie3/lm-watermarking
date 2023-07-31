@@ -88,6 +88,10 @@ class WatermarkBase:
             greenlist_ids = vocab_permutation[
                 (self.vocab_size - greenlist_size) :
             ]  # legacy behavior
+        # print(greenlist_size)
+        # print(len(greenlist_ids))
+        # import pdb; pdb.set_trace()
+        # input("check")
         return greenlist_ids
 
 
@@ -170,7 +174,6 @@ class WatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
             )  # add candidate to prefix
             if prediction_candidate in greenlist_ids:  # test for consistency
                 final_greenlist.append(prediction_candidate)
-
             # What follows below are optional early-stopping rules for efficiency
             if tail_rule == "fixed_score":
                 if sorted_scores[0] - sorted_scores[idx + 1] > self.delta:
@@ -195,12 +198,194 @@ class WatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
         # the seed and partition operations are not tensor/vectorized, thus
         # each sequence in the batch needs to be treated separately.
 
+        # print(self.self_salt)
+        # import pdb; pdb.set_trace()
+
         list_of_greenlist_ids = [None for _ in input_ids]  # Greenlists could differ in length
         for b_idx, input_seq in enumerate(input_ids):
             if self.self_salt:
+                # input("greenlist_ids this one")
                 greenlist_ids = self._score_rejection_sampling(input_seq, scores[b_idx])
             else:
+                # input("check here")
                 greenlist_ids = self._get_greenlist_ids(input_seq)
+            #     print(len(greenlist_ids))
+            # import pdb; pdb.set_trace()
+
+            list_of_greenlist_ids[b_idx] = greenlist_ids
+
+            # logic for computing and storing spike entropies for analysis
+            if self.store_spike_ents:
+                if self.spike_entropies is None:
+                    self.spike_entropies = [[] for _ in range(input_ids.shape[0])]
+                self.spike_entropies[b_idx].append(self._compute_spike_entropy(scores[b_idx]))
+
+        green_tokens_mask = self._calc_greenlist_mask(
+            scores=scores, greenlist_token_ids=list_of_greenlist_ids
+        )
+        # print(type(green_tokens_mask))
+        # import pdb; pdb.set_trace()
+        scores = self._bias_greenlist_logits(
+            scores=scores, greenlist_mask=green_tokens_mask, greenlist_bias=self.delta
+        )
+
+        return scores
+
+
+class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
+    """LogitsProcessor modifying model output scores in a pipe. Can be used in any HF pipeline to modify scores to fit the watermark,
+    but can also be used as a standalone tool inserted for any model producing scores inbetween model outputs and next token sampler.
+    """
+
+    def __init__(self, *args, cl_mlp, store_spike_ents: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.store_spike_ents = store_spike_ents
+        self.spike_entropies = None
+        self.cl_mlp = cl_mlp
+        if self.store_spike_ents:
+            self._init_spike_entropies()
+
+    def _init_spike_entropies(self):
+        alpha = torch.exp(torch.tensor(self.delta)).item()
+        gamma = self.gamma
+
+        self.z_value = ((1 - gamma) * (alpha - 1)) / (1 - gamma + (alpha * gamma))
+        self.expected_gl_coef = (gamma * alpha) / (1 - gamma + (alpha * gamma))
+
+        # catch for overflow when bias is "infinite"
+        if alpha == torch.inf:
+            self.z_value = 1.0
+            self.expected_gl_coef = 1.0
+
+    def _get_spike_entropies(self):
+        spike_ents = [[] for _ in range(len(self.spike_entropies))]
+        for b_idx, ent_tensor_list in enumerate(self.spike_entropies):
+            for ent_tensor in ent_tensor_list:
+                spike_ents[b_idx].append(ent_tensor.item())
+        return spike_ents
+
+    def _get_and_clear_stored_spike_ents(self):
+        spike_ents = self._get_spike_entropies()
+        self.spike_entropies = None
+        return spike_ents
+
+    def _compute_spike_entropy(self, scores):
+        # precomputed z value in init
+        probs = scores.softmax(dim=-1)
+        denoms = 1 + (self.z_value * probs)
+        renormed_probs = probs / denoms
+        sum_renormed_probs = renormed_probs.sum()
+        return sum_renormed_probs
+
+    def _calc_greenlist_mask(
+        self, scores: torch.FloatTensor, greenlist_token_ids
+    ) -> torch.BoolTensor:
+        # Cannot lose loop, greenlists might have different lengths
+        green_tokens_mask = torch.zeros_like(scores, dtype=torch.bool)
+        for b_idx, greenlist in enumerate(greenlist_token_ids):
+            if len(greenlist) > 0:
+                green_tokens_mask[b_idx][greenlist] = True
+        return green_tokens_mask
+
+    def _bias_greenlist_logits(
+        self, scores: torch.Tensor, greenlist_mask: torch.Tensor, greenlist_bias: float
+    ) -> torch.Tensor:
+        scores[greenlist_mask] = scores[greenlist_mask] + greenlist_bias
+        return scores
+
+    def _sem_seed_rng(self, hidden_embeddings: torch.LongTensor, cl_mlp) -> None:
+        """Seed RNG from local context. Not batched, because the generators we use (like cuda.random) are not batched."""
+        # Need to have enough context for seed generation
+        # if input_ids.shape[-1] < self.context_width:
+        #     raise ValueError(
+        #         f"seeding_scheme requires at least a {self.context_width} token prefix to seed the RNG."
+        #     )
+
+        prf_key = prf_lookup[self.prf_type](
+                hidden_embeddings=hidden_embeddings, salt_key=self.hash_key, cl_mlp=cl_mlp
+            )
+        # print("check2")
+        # enable for long, interesting streams of pseudorandom numbers: print(prf_key)
+        self.rng.manual_seed(prf_key % (2**64 - 1))  # safeguard against overflow from long
+
+    def _sem_get_greenlist_ids(self, hidden_embeddings: torch.LongTensor, cl_mlp) -> torch.LongTensor:
+        """Seed rng based on local context width and use this information to generate ids on the green list."""
+        self._sem_seed_rng(hidden_embeddings=hidden_embeddings, cl_mlp=cl_mlp)
+
+        greenlist_size = int(self.vocab_size * self.gamma)
+        vocab_permutation = torch.randperm(
+            self.vocab_size, device=hidden_embeddings.device, generator=self.rng
+        )
+        if self.select_green_tokens:  # directly
+            greenlist_ids = vocab_permutation[:greenlist_size]  # new
+        else:  # select green via red
+            greenlist_ids = vocab_permutation[
+                (self.vocab_size - greenlist_size) :
+            ]  # legacy behavior
+        return greenlist_ids
+
+    def _score_rejection_sampling(
+        self, input_ids: torch.LongTensor, scores: torch.FloatTensor, tail_rule="fixed_compute"
+    ) -> list[int]:
+        raise("Not emplmented.")
+        # input("check _score_rejection_sampling")
+        """Generate greenlist based on current candidate next token. Reject and move on if necessary. Method not batched.
+        This is only a partial version of Alg.3 "Robust Private Watermarking", as it always assumes greedy sampling. It will still (kinda)
+        work for all types of sampling, but less effectively.
+        To work efficiently, this function can switch between a number of rules for handling the distribution tail.
+        These are not exposed by default.
+        """
+        sorted_scores, greedy_predictions = scores.sort(dim=-1, descending=True)
+
+        final_greenlist = []
+        for idx, prediction_candidate in enumerate(greedy_predictions):
+            greenlist_ids = self._sem_get_greenlist_ids(
+                torch.cat([input_ids, prediction_candidate[None]], dim=0)
+            )  # add candidate to prefix
+            if prediction_candidate in greenlist_ids:  # test for consistency
+                final_greenlist.append(prediction_candidate)
+
+            # What follows below are optional early-stopping rules for efficiency
+            # print(sorted_scores[0], sorted_scores[-1])
+            # input("check here")
+            if tail_rule == "fixed_score":
+                if sorted_scores[0] - sorted_scores[idx + 1] > self.delta:
+                    break
+            elif tail_rule == "fixed_list_length":
+                if len(final_greenlist) == 10:
+                    break
+            elif tail_rule == "fixed_compute":
+                if idx == 40:
+                    break
+            else:
+                pass  # do not break early
+        return torch.as_tensor(final_greenlist, device=input_ids.device)
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, hidden_embeddings: torch.FloatTensor) -> torch.FloatTensor:
+        """Call with previous context as input_ids, and scores for next token."""
+
+        # this is lazy to allow us to co-locate on the watermarked model's device
+        self.rng = torch.Generator(device=input_ids.device) if self.rng is None else self.rng
+
+        # NOTE, it would be nice to get rid of this batch loop, but currently,
+        # the seed and partition operations are not tensor/vectorized, thus
+        # each sequence in the batch needs to be treated separately.
+
+        print(hidden_embeddings.shape)
+        input("check")
+
+        # input("check -0")
+        list_of_greenlist_ids = [None for _ in input_ids]  # Greenlists could differ in length
+        for b_idx, (input_seq, hidden_embeddings_seq) in enumerate(zip(input_ids, hidden_embeddings)):
+            if self.self_salt:
+                # input("check call _score_rejection_sampling")
+                greenlist_ids = self._score_rejection_sampling(input_seq, scores[b_idx])
+            else:
+                if "sem" in self.prf_type:
+                    greenlist_ids = self._sem_get_greenlist_ids(hidden_embeddings_seq, self.cl_mlp)
+                else:
+                    self._get_greenlist_ids(input_seq)
             list_of_greenlist_ids[b_idx] = greenlist_ids
 
             # logic for computing and storing spike entropies for analysis

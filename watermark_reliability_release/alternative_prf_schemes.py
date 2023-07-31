@@ -6,6 +6,7 @@ Can be hooked into existing WatermarkLogitsProcessor as modified base class Wate
 import torch
 from itertools import combinations
 from functools import lru_cache
+import numpy as np
 
 # Key properties of a hashing scheme
 props = {
@@ -33,6 +34,11 @@ def seeding_scheme_lookup(seeding_scheme: str):
     elif seeding_scheme == "skipgram":
         prf_type = "skipgram_prf"
         context_width = 5
+        self_salt = False
+        hash_key = 15485863
+    elif seeding_scheme == "sem":
+        prf_type = "sem_prf"
+        context_width = 1
         self_salt = False
         hash_key = 15485863
     elif seeding_scheme.startswith(
@@ -71,6 +77,22 @@ def simple_skip_prf(input_ids: torch.LongTensor, salt_key: int, k=2) -> int:
     # k is the skip distance
     return hashint(salt_key * input_ids[::k]).prod().item()
 
+def sem_prf(hidden_embeddings: torch.LongTensor, salt_key:int, cl_mlp) -> int:
+    xy = cl_mlp(hidden_embeddings[-1:, :])
+    if xy[0,1] == 0:
+        if xy[0,0] > 0:
+            theta = 0
+        else:
+            theta = np.pi
+    else:
+        theta = torch.atan(xy[0,1] / (xy[0,0] + 1e-9)).item()
+        if xy[0,1] < 0:
+            theta += np.pi
+    
+    # print(theta / (2*np.pi) * 10)
+    a = torch.tensor([round(theta / (2*np.pi) * 10)])
+    # import pdb; pdb.set_trace()
+    return hashint(salt_key * a).item()
 
 def skipgram_prf(input_ids: torch.LongTensor, salt_key: int) -> int:
     # maximum distance skipgram within context
@@ -126,6 +148,7 @@ prf_lookup = {
     "minskipgram_prf": minskipgram_prf,
     "noncomm_prf": noncomm_prf,
     "position_prf": position_prf,
+    "sem_prf": sem_prf,
 }
 
 # Generate a global permute table once at startup

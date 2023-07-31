@@ -21,6 +21,8 @@ import torch.nn.functional as F
 
 from datasets import load_dataset, IterableDataset
 
+from .contrastive import CLModel
+
 from torch import Tensor
 from tokenizers import Tokenizer
 
@@ -144,6 +146,25 @@ def load_semantic_model(args):
     # sentence_embeddings = F.normalize(sentence_embeddings, p=2, dim=1)
 
     return model, tokenizer, device
+
+def load_mlp_model(args):
+    """Load and return the model and tokenizer"""
+
+    if args.use_gpu:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if args.load_fp16:
+            raise("cl_mlp is not emplemented with fp16")
+        else:
+            pass
+    else:
+        device = "cpu"
+
+    model = CLModel()
+    model.load_state_dict(torch.load(args.cl_mlp_model_path))
+    model = model.to(device)
+    model.eval()
+
+    return model
 
 
 def add_idx(example, idx):
@@ -541,19 +562,35 @@ def generate(
     device=None,
     args=None,
 ):
+    # print(examples.keys())
+
+    # test_sample = ["Beginners BBQ Class Taking Place in Missoula! Do you want to get better at making delicious BBQ? You will have the opportunity, put this on your calendar now. Thursday, September 22nd join World Class BBQ Champion, Tony Balay from Lonestar Smoke Rangers. He will be teaching a beginner level class for everyone who wants to get better with their culinary skills. He will teach you everything you need to know to compete in a KCBS BBQ competition, including"]
+
+    # test_input_ids = tokenizer(test_sample, return_tensors="pt").to(device)
+    # # print(test_input_ids)
+    # output = generate_without_watermark(**test_input_ids)
+    # print(output[0])
+    # ex = tokenizer.batch_decode(output)
+    # print(ex)
+    # import pdb; pdb.set_trace()
+
     input_ids = collate_batch(input_ids=examples["input_ids"], collator=data_collator).to(device)
     # print(examples.keys())
-    # print(examples['text'][0])
+    # print(examples['input_ids'])
+    # print(examples['input_ids'].shape)
     # print(examples['truncated_input'][0])
     # print(examples['prompt_length'])
 
     # print(input_ids.shape)
+    # print(input_ids)
     # input("check")
 
     with torch.no_grad():
         if args.generation_seed is not None:
             torch.manual_seed(args.generation_seed)
         output_without_watermark = generate_without_watermark(input_ids=input_ids)
+
+        # return output_without_watermark
 
         if args.generation_seed is not None:
             torch.manual_seed(args.generation_seed)

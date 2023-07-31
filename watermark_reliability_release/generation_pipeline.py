@@ -32,7 +32,7 @@ from utils.submitit import str2bool
 from utils.io import write_jsonlines, write_json
 
 # watermarking functionality
-from watermark_processor import WatermarkLogitsProcessor
+from watermark_processor import WatermarkLogitsProcessor, SemWatermarkLogitsProcessor
 
 # generation pipeline helpers
 from utils.generation import (
@@ -43,6 +43,7 @@ from utils.generation import (
     check_output_lengths,
     tokenize_for_generation,
     generate,
+    load_mlp_model,
 )
 
 
@@ -90,13 +91,14 @@ def main(args):
     ###########################################################################
 
     model, tokenizer, device = load_model(args)
+    cl_mlp = load_mlp_model(args)
 
-    # # gen_kwargs.update(output_hidden_states=True)
     # test_sample = ["Beginners BBQ Class Taking Place in Missoula! Do you want to get better at making delicious BBQ? You will have the opportunity, put this on your calendar now. Thursday, September 22nd join World Class BBQ Champion, Tony Balay from Lonestar Smoke Rangers. He will be teaching a beginner level class for everyone who wants to get better with their culinary skills. He will teach you everything you need to know to compete in a KCBS BBQ competition, including"]
+    test_sample = ["Still image of Lisa Sharon Harper from YouTube.\n Pastors and lay leaders who represent minority and multiethnic communities and are appalled by the prospect of a Donald Trump presidency have a blunt message for the white evangelical majority that helped elect him: we’re disappointed in you, but not surprised.\n For these evangelicals of color, Trump’s use of racially-charged language, his anti-immigrant rhetoric, negative remarks targeting Mexicans and Muslims, as well as the emergence of the “Access Hollywood” tape and his other divisive comments about women, were simply disqualifying.\n While some prominent white evangelical leaders made their opposition to then-candidate Trump widely known (many signing a letter protesting his candidacy), the majority of white self-identified evangelicals (estimated to run as high as 81 percent), lined up behind him.\n “Many of [Trump’s] critics fell silent or fell into line, while the group known as the ‘religious right’ continued to support him’ says Kathy Khang, a Christian writer and speaker based in the Chicago area.\n For the past eight years, people of color, the LGBT community, and women have been given license to flourish, says Lisa Sharon Harper, author of The Very Good Gospel: How Everything Wrong Can Be Made Right and chief church engagement officer at Sojourners. “The white church demonstrated on November 8th that it is more white than Christian, and has a [greater] commitment to white supremacy than it does to Christ,” says Harper.\n The fact that so many evangelicals didn’t see Trump’s controversial rhetoric as derogatory underlined the presence of a persistent and troubling racial divide in American Christianity that these leaders say is deeply rooted in American history.\n Some are questioning the value of continued association with the white evangelical majority.\n Despite their dismay over the prospect of a Trump presidency, those I spoke to appear to be more motivated and energized than daunted by the challenges that lie ahead.\n “This has been"]
 
     # test_input_ids = tokenizer(test_sample, return_tensors="pt").to(device)
     # # print(test_input_ids)
-    # output = model.generate(**test_input_ids, max_length=1024)
+    # output = model.generate(**test_input_ids, max_length=1024, output_hidden_states=True)
     # print(len(output[0]))
     # ex = tokenizer.batch_decode(output)
     # print(ex)
@@ -163,8 +165,9 @@ def main(args):
     # Construct the watermark processor
     ###########################################################################
 
-    watermark_processor = WatermarkLogitsProcessor(
+    watermark_processor = SemWatermarkLogitsProcessor(
         vocab=list(tokenizer.get_vocab().values()),
+        cl_mlp = cl_mlp,
         gamma=args.gamma,
         delta=args.delta,
         seeding_scheme=args.seeding_scheme,
@@ -177,6 +180,7 @@ def main(args):
     ###########################################################################
 
     gen_kwargs = dict(max_new_tokens=args.max_new_tokens)
+    gen_kwargs.update(output_hidden_states=True)
 
     # FIXME can add typica
     if args.use_sampling:
@@ -192,10 +196,20 @@ def main(args):
     else:
         gen_kwargs.update(dict(num_beams=args.num_beams))
 
+    print("gen_kwargs: ", gen_kwargs)
+    # input("check")
     generate_without_watermark = partial(model.generate, **gen_kwargs)
     generate_with_watermark = partial(
         model.generate, logits_processor=LogitsProcessorList([watermark_processor]), **gen_kwargs
     )
+
+    # test_input_ids = tokenizer(test_sample, return_tensors="pt").to(device)
+    # # print(test_input_ids)
+    # output = generate_without_watermark(**test_input_ids)
+    # print(output[0])
+    # ex = tokenizer.batch_decode(output)
+    # print(ex)
+    # import pdb; pdb.set_trace()
 
     # def forward(
     #     self,
@@ -225,6 +239,17 @@ def main(args):
         args=args,
     )
 
+    # test_input_ids = tokenizer(test_sample, return_tensors="pt").to(device)
+    # print(test_input_ids["input_ids"].shape)
+    # # test_input_ids["input_ids"] = [test_input_ids["input_ids"]]
+    # # output = generation_partial(test_input_ids)
+    # # test_input_ids["input_ids"] = [test_input_ids["input_ids"]]
+    # output = generate_without_watermark(**test_input_ids)
+    # print(output[0])
+    # ex = tokenizer.batch_decode(output)
+    # print(ex)
+    # import pdb; pdb.set_trace()
+
     ###########################################################################
     # Compose the partials to create the pipeline
     ###########################################################################
@@ -240,7 +265,8 @@ def main(args):
     # next(myiter)["input_ids"]
     # next(myiter)["input_ids"]
     # ex = next(myiter)["input_ids"].to(device)
-    # # print(ex)
+    # print(ex)
+    # input("check")
 
     # output = model.generate(ex, output_hidden_states=True, max_new_tokens=1024, return_dict_in_generate=True, use_cache=True)
     # print(output.keys())
@@ -281,7 +307,8 @@ def main(args):
     while i < args.min_generations:
         try:
             ex = next(ds_iterator)
-            input("checl")
+            # print(type(ex))
+            # input("checl")
             total_steps += 1
         except StopIteration:
             break
@@ -566,6 +593,11 @@ if __name__ == "__main__":
         type=float,
         default=0.25,
         help="The ratio of tokens to put in the greenlist when splitting the vocabulary",
+    )
+    parser.add_argument(
+        "--cl_mlp_model_path",
+        type=str,
+        default=None,
     )
     parser.add_argument(
         "--delta",

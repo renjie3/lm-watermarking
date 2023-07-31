@@ -113,7 +113,7 @@ def main(args):
     import torch.optim as optim
     from utils.contrastive import CLModel, contrastive_train_batch, infoNCE_loss
     from torch.utils.data import DataLoader
-    cl_mlp = CLModel(feat_dim=args.cl_mlp_feat_dim).to(device)
+    cl_mlp = CLModel(2560, feat_dim=args.cl_mlp_feat_dim).to(device)
     optimizer = optim.Adam(cl_mlp.parameters(), lr=args.cl_lr, weight_decay=1e-6)
     # optimizer = optim.SGD(cl_mlp.parameters(), lr=0.05, weight_decay=1e-4, momentum=0.9)
 
@@ -132,7 +132,10 @@ def main(args):
             pos_2 = pos_1 + torch.normal(0, 0.01, pos_1.shape).to(device)
             loss, batch_size = contrastive_train_batch(cl_mlp, pos_1.detach(), pos_2.detach(), optimizer, temperature=0.5)
             emb_loss, _ = infoNCE_loss(pos_1, pos_2, temperature=0.5)
-            print(loss / batch_size, emb_loss / batch_size)
+            print(total_steps, loss / batch_size, emb_loss / batch_size) # 2560
+            
+            if total_steps % 100 == 0:
+                torch.save(cl_mlp.state_dict(), "{}/cl_model_01_{}.pt".format(args.cl_savepath, epoch_id))
         
     pbar.close()
 
@@ -217,6 +220,11 @@ if __name__ == "__main__":
         "--cl_lr",
         type=float,
         default=1e-3,
+    )
+    parser.add_argument(
+        "--cl_savepath",
+        type=str,
+        default="./results/cl_model",
     )
     parser.add_argument(
         "--cl_epochs",
