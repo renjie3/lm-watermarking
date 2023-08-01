@@ -35,7 +35,8 @@ from utils.hypothesis_testing import (
     T_and_F_runs_dummy_dict_no_bins,
 )
 
-from watermark_processor import WatermarkDetector
+from .contrastive import CLModel
+from watermark_processor import WatermarkDetector, SemWatermarkDetector
 
 # These areguments are ignored when doing checks between meta file and cmdline args
 NO_CHECK_ARGS = [
@@ -81,8 +82,8 @@ SUPPORTED_METRICS = [
 
 # These are the output text columns we want to compute metrics on
 OUTPUT_TEXT_COLUMN_NAMES = [
-    "baseline_completion",
-    "no_wm_output",
+    # "baseline_completion",
+    # "no_wm_output",
     "w_wm_output",
     "w_wm_output_attacked",
 ]
@@ -164,10 +165,32 @@ def load_detector(args):
         tokenizer.pad_token_id = 0  # unk
     else:
         tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
+        model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, cache_dir="/egr/research-dselab/renjie3/renjie/LLM/cache")
 
     device = "cuda" if (args.use_gpu and torch.cuda.is_available()) else "cpu"
+    model = model.to(device)
 
-    watermark_detector = WatermarkDetector(
+    if args.cl_mlp_model_path is not None:
+        cl_mlp = CLModel(2560)
+        cl_mlp.load_state_dict(torch.load(args.cl_mlp_model_path))
+        cl_mlp = cl_mlp.to(device)
+        cl_mlp.eval()
+        # input("check")
+
+    # watermark_detector = WatermarkDetector(
+    #     vocab=list(tokenizer.get_vocab().values()),
+    #     gamma=args.gamma,
+    #     seeding_scheme=args.seeding_scheme,
+    #     device=device,
+    #     tokenizer=tokenizer,
+    #     z_threshold=args.detection_z_threshold,
+    #     normalizers=args.normalizers,
+    #     ignore_repeated_ngrams=args.ignore_repeated_ngrams,
+    # )
+
+    watermark_detector = SemWatermarkDetector(
+        decoder=model.model.decoder,
+        cl_mlp=cl_mlp,
         vocab=list(tokenizer.get_vocab().values()),
         gamma=args.gamma,
         seeding_scheme=args.seeding_scheme,
@@ -195,24 +218,31 @@ def compute_z_score(
     if args.normalizers != []:
         return_green_token_mask = None
 
-    input_text = example[text_column_name]
+    if args.prf_type == "sem_prf":
+        prompt = example["truncated_input"]
+        input_text = example[text_column_name]
+        # print(input_text)
+        # import pdb; pdb.set_trace()
+    else:
+        input_text = example[text_column_name]
     error = False
     if input_text == "":
         error = True
     else:
-        try:
-            score_dict = watermark_detector.detect(
-                input_text,
-                window_size=window_size,
-                window_stride=window_stride,
-                return_green_token_mask=return_green_token_mask,
-                return_prediction=False,  # this conversion to "decision" only desired in demo context
-                convert_to_float=True,  # this helps with integrity under NaNs
-                return_z_at_T=args.compute_scores_at_T,
-            )
-        except Exception as e:
-            print(e)
-            error = True
+        # try:
+        score_dict = watermark_detector.detect(
+            input_text,
+            prompt=prompt,
+            window_size=window_size,
+            window_stride=window_stride,
+            return_green_token_mask=return_green_token_mask,
+            return_prediction=False,  # this conversion to "decision" only desired in demo context
+            convert_to_float=True,  # this helps with integrity under NaNs
+            return_z_at_T=args.compute_scores_at_T,
+        )
+        # except Exception as e:
+        #     print(e)
+        #     error = True
     if error:
         problem_text = f"'{input_text[:40]} {'[...]' if len(input_text) > 40 else ''}'"
         if args.verbose:
@@ -720,6 +750,7 @@ def scheme_hparam_extractor(x):
     is_simple_1 = ("simple_1" in x) or ("lefthash" in x)
     is_algorithm_3 = ("algorithm-3" in x) or ("selfhash" in x)
     is_anchored = "anchored" in x
+    is_sem = "sem" == x
 
     x = x.replace("ff-", "")
     x = x.replace("_prf", "")
@@ -749,6 +780,13 @@ def scheme_hparam_extractor(x):
             "anchored": True,
             "context_width": 4,
             "self_salt": True,
+        }
+    elif is_sem:
+        x_dict = {
+            "prf_type": "sem_prf",
+            "anchored": False,
+            "context_width": 1,
+            "self_salt": False,
         }
     else:
         raise ValueError(f"Invalid scheme name {x} found.")

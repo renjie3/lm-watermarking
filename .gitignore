@@ -33,6 +33,7 @@ experiments/logfile
 experiments/gpt_attack.py
 watermark_reliability_release/results
 watermark_reliability_release/metrics
+openai_key.txt
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

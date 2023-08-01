@@ -13,7 +13,7 @@ class CLModel(nn.Module):
     def __init__(self, encoder_dim=2048, feat_dim=2):
         super(CLModel, self).__init__()
 
-        self.fc1 = nn.Sequential(nn.Linear(encoder_dim, 4096, bias=False), 
+        self.fc1 = nn.Sequential(nn.Linear(2560, 4096, bias=False),  # FIXME
                                nn.BatchNorm1d(4096),
                                nn.ReLU(),
                                )

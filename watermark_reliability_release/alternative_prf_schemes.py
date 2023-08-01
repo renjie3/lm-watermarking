@@ -7,6 +7,7 @@ import torch
 from itertools import combinations
 from functools import lru_cache
 import numpy as np
+import torch.nn.functional as F
 
 # Key properties of a hashing scheme
 props = {
@@ -78,7 +79,8 @@ def simple_skip_prf(input_ids: torch.LongTensor, salt_key: int, k=2) -> int:
     return hashint(salt_key * input_ids[::k]).prod().item()
 
 def sem_prf(hidden_embeddings: torch.LongTensor, salt_key:int, cl_mlp) -> int:
-    xy = cl_mlp(hidden_embeddings[-1:, :])
+    xy = F.normalize(cl_mlp(hidden_embeddings[-1:, :]), p=2, dim=1)
+    # xy = cl_mlp(hidden_embeddings[-1:, :])
     if xy[0,1] == 0:
         if xy[0,0] > 0:
             theta = 0
@@ -91,6 +93,7 @@ def sem_prf(hidden_embeddings: torch.LongTensor, salt_key:int, cl_mlp) -> int:
     
     # print(theta / (2*np.pi) * 10)
     a = torch.tensor([round(theta / (2*np.pi) * 10)])
+    # print("check sem_prf")
     # import pdb; pdb.set_trace()
     return hashint(salt_key * a).item()
 

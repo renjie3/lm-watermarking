@@ -190,6 +190,8 @@ def main(args):
     ###########################################################################
     from utils.evaluation import scheme_hparam_extractor
 
+    # args.seeding_scheme = "sem" # FIXME
+
     args.__dict__.update(scheme_hparam_extractor(args.seeding_scheme))
 
     print(f"seeding_scheme: {args.seeding_scheme}")
@@ -197,6 +199,7 @@ def main(args):
     print(f"anchored: {args.anchored}")
     print(f"context_width: {args.context_width}")
     print(f"self_salt: {args.self_salt}")
+    # input("check")
 
     ###########################################################################
     # Concat logic for multiple generations
@@ -1274,6 +1277,11 @@ if __name__ == "__main__":
         default=True,
         help="Whether to log the raw tabular metric data to wandb.",
     )
+    parser.add_argument(
+        "--cl_mlp_model_path",
+        type=str,
+        default=None,
+    )
     args = parser.parse_args()
 
     ###########################################################################
@@ -1291,6 +1299,8 @@ if __name__ == "__main__":
         args.evaluation_metrics = all_metrics
     if args.evaluation_metrics == ["all_w_ppl"]:
         args.evaluation_metrics = SUPPORTED_METRICS
+    if args.evaluation_metrics == ["z_score"]:
+        args.evaluation_metrics = ["z-score"]
 
     # if no output dir specified, use the input dir
     if args.output_dir == "":

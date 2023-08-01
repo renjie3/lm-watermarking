@@ -372,8 +372,8 @@ class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
         # the seed and partition operations are not tensor/vectorized, thus
         # each sequence in the batch needs to be treated separately.
 
-        print(hidden_embeddings.shape)
-        input("check")
+        # print(hidden_embeddings.shape)
+        # input("check")
 
         # input("check -0")
         list_of_greenlist_ids = [None for _ in input_ids]  # Greenlists could differ in length
@@ -504,7 +504,7 @@ class WatermarkDetector(WatermarkBase):
         p_value = scipy.stats.norm.sf(z)
         return p_value
 
-    @lru_cache(maxsize=2**32)
+    # @lru_cache(maxsize=2**32)
     def _get_ngram_score_cached(self, prefix: tuple[int], target: int):
         """Expensive re-seeding and sampling is cached."""
         # Handle with care, should ideally reset on __getattribute__ access to self.prf_type, self.context_width, self.self_salt, self.hash_key
@@ -520,6 +520,7 @@ class WatermarkDetector(WatermarkBase):
             )
 
         # Compute scores for all ngrams contexts in the passage:
+        # rj since here they use the previous tokens only. They don't need to calculate the green list one by one. They can just evaluate one time and count the freq to get the overall results.
         token_ngram_generator = ngrams(
             input_ids.cpu().tolist(), self.context_width + 1 - self.self_salt
         )
@@ -535,7 +536,7 @@ class WatermarkDetector(WatermarkBase):
     def _get_green_at_T_booleans(self, input_ids, ngram_to_watermark_lookup) -> tuple[torch.Tensor]:
         """Generate binary list of green vs. red per token, a separate list that ignores repeated ngrams, and a list of offsets to
         convert between both representations:
-        green_token_mask = green_token_mask_unique[offsets] except for all locations where otherwise a repeat would be counted
+        green_token_mask = green_token_mask_unique[offsets] except for all locations where otherwise a repeat would be counted # rj I cannot understand this.
         """
         green_token_mask, green_token_mask_unique, offsets = [], [], []
         used_ngrams = {}
@@ -799,8 +800,12 @@ class WatermarkDetector(WatermarkBase):
         # call score method
         output_dict = {}
 
+        # print(window_size)
+        # import pdb; pdb.set_trace()
         if window_size is not None:
             # assert window_size <= len(tokenized_text) cannot assert for all new types
+            # print(window_size)
+            # import pdb; pdb.set_trace()
             score_dict = self._score_sequence_window(
                 tokenized_text,
                 window_size=window_size,
@@ -830,6 +835,268 @@ class WatermarkDetector(WatermarkBase):
 
         return output_dict
 
+class SemWatermarkDetector(WatermarkDetector):
+
+    def __init__(
+        self,
+        *args,
+        decoder,
+        cl_mlp,
+        device: torch.device = None,
+        tokenizer: Tokenizer = None,
+        z_threshold: float = 4.0,
+        normalizers: list[str] = ["unicode"],  # or also: ["unicode", "homoglyphs", "truecase"]
+        ignore_repeated_ngrams: bool = False,
+        **kwargs,
+    ):
+        super().__init__(*args, device=device, tokenizer=tokenizer, z_threshold=z_threshold, normalizers=normalizers, ignore_repeated_ngrams=ignore_repeated_ngrams, **kwargs)
+        # also configure the metrics returned/preprocessing options
+        assert device, "Must pass device"
+        assert tokenizer, "Need an instance of the generating tokenizer to perform detection"
+
+        self.decoder = decoder
+        self.cl_mlp = cl_mlp
+
+        # self.tokenizer = tokenizer
+        # self.device = device
+        # self.z_threshold = z_threshold
+        # self.rng = torch.Generator(device=self.device)
+
+        # self.normalizers = []
+        # for normalization_strategy in normalizers:
+        #     self.normalizers.append(normalization_strategy_lookup(normalization_strategy))
+        # self.ignore_repeated_ngrams = ignore_repeated_ngrams
+
+    def _sem_seed_rng(self, hidden_embeddings: torch.LongTensor, cl_mlp) -> None:
+        """Seed RNG from local context. Not batched, because the generators we use (like cuda.random) are not batched."""
+        # Need to have enough context for seed generation
+        # if input_ids.shape[-1] < self.context_width:
+        #     raise ValueError(
+        #         f"seeding_scheme requires at least a {self.context_width} token prefix to seed the RNG."
+        #     )
+
+        prf_key = prf_lookup[self.prf_type](
+                hidden_embeddings=hidden_embeddings, salt_key=self.hash_key, cl_mlp=cl_mlp
+            )
+        # print("check2")
+        # enable for long, interesting streams of pseudorandom numbers: print(prf_key)
+        self.rng.manual_seed(prf_key % (2**64 - 1))  # safeguard against overflow from long
+
+    def _sem_get_greenlist_ids(self, hidden_embeddings: torch.LongTensor, cl_mlp) -> torch.LongTensor:
+        """Seed rng based on local context width and use this information to generate ids on the green list."""
+        self._sem_seed_rng(hidden_embeddings=hidden_embeddings, cl_mlp=cl_mlp)
+
+        greenlist_size = int(self.vocab_size * self.gamma)
+        vocab_permutation = torch.randperm(
+            self.vocab_size, device=hidden_embeddings.device, generator=self.rng
+        )
+        if self.select_green_tokens:  # directly
+            greenlist_ids = vocab_permutation[:greenlist_size]  # new
+        else:  # select green via red
+            greenlist_ids = vocab_permutation[
+                (self.vocab_size - greenlist_size) :
+            ]  # legacy behavior
+        return greenlist_ids
+
+    # @lru_cache(maxsize=2**32)
+    def _get_ngram_score_cached(self, prefix: torch.Tensor, target: int, past_key_values):
+        """Expensive re-seeding and sampling is cached."""
+        # Handle with care, should ideally reset on __getattribute__ access to self.prf_type, self.context_width, self.self_salt, self.hash_key
+        # print(prefix.shape)
+        with torch.no_grad():
+            if past_key_values is not None:
+                output = self.decoder(prefix, past_key_values=past_key_values, use_cache=True, return_dict=True)
+            else:
+                output = self.decoder(prefix, use_cache=True, return_dict=True)
+
+        torch.cuda.empty_cache()
+        # print(output.last_hidden_state.shape)
+        greenlist_ids = self._sem_get_greenlist_ids(output.last_hidden_state[:, -1, :], self.cl_mlp)
+        current_token_result = True if target in greenlist_ids else False
+        return current_token_result, output.past_key_values
+
+    def _score_ngrams_in_passage(self, input_ids: torch.Tensor, tokenized_prompt):
+        """Core function to gather all ngrams in the input and compute their watermark."""
+        if len(input_ids) - self.context_width < 1:
+            raise ValueError(
+                f"Must have at least {1} token to score after "
+                f"the first min_prefix_len={self.context_width} tokens required by the seeding scheme."
+            )
+
+        # Compute scores for all ngrams contexts in the passage:
+        # rj since here they use the previous tokens only. They don't need to calculate the green list one by one. They can just evaluate one time and count the freq to get the overall results.
+        # token_ngram_generator = ngrams(
+        #     input_ids.cpu().tolist(), self.context_width + 1 - self.self_salt
+        # )
+        # frequencies_table = collections.Counter(token_ngram_generator)
+        ngram_to_watermark_lookup = []
+        past_key_values = None
+        for idx in range(len(input_ids)):
+            torch.cuda.empty_cache()
+            # print(idx, len(input_ids), len(tokenized_prompt))
+            if idx > 0:
+                # prefix = torch.cat([tokenized_prompt, input_ids[:idx]], dim=0).unsqueeze(0)
+                prefix = input_ids[idx - 1:idx].unsqueeze(0)
+            else:
+                prefix = tokenized_prompt.unsqueeze(0)
+            target = input_ids[idx]
+            outputs = self._get_ngram_score_cached(prefix, target, past_key_values)
+            del past_key_values
+            past_key_values = outputs[1]
+            # print(past_key_values[0][0].dtype)
+            # print(len(past_key_values))
+            # print(len(past_key_values[0]))
+            # import pdb; pdb.set_trace()
+            ngram_to_watermark_lookup.append(outputs[0])
+
+        # input("check1")
+
+        return ngram_to_watermark_lookup
+
+    def _score_sequence(
+        self,
+        input_ids: torch.Tensor,
+        tokenized_prompt = None,
+        return_num_tokens_scored: bool = True,
+        return_num_green_tokens: bool = True,
+        return_green_fraction: bool = True,
+        return_green_token_mask: bool = False,
+        return_z_score: bool = True,
+        return_z_at_T: bool = True,
+        return_p_value: bool = True,
+    ):
+        ngram_to_watermark_lookup = self._score_ngrams_in_passage(input_ids, tokenized_prompt=tokenized_prompt)
+        # green_token_mask, green_unique, offsets = self._get_green_at_T_booleans(
+        #     input_ids, ngram_to_watermark_lookup
+        # )
+
+        # Count up scores over all ngrams
+        # num_tokens_scored = sum(frequencies_table.values())
+        num_tokens_scored = len(ngram_to_watermark_lookup)
+        # print(num_tokens_scored)
+        # print(len(input_ids) - self.context_width + self.self_salt)
+        assert num_tokens_scored == len(input_ids) - self.context_width + self.self_salt + 1
+        green_token_count = sum(ngram_to_watermark_lookup)
+        # assert green_token_count == green_unique.sum()
+
+        # HF-style output dictionary
+        score_dict = dict()
+        if return_num_tokens_scored:
+            score_dict.update(dict(num_tokens_scored=num_tokens_scored))
+        if return_num_green_tokens:
+            score_dict.update(dict(num_green_tokens=green_token_count))
+        if return_green_fraction:
+            score_dict.update(dict(green_fraction=(green_token_count / num_tokens_scored)))
+        if return_z_score:
+            score_dict.update(
+                dict(z_score=self._compute_z_score(green_token_count, num_tokens_scored))
+            )
+        if return_p_value:
+            z_score = score_dict.get("z_score")
+            if z_score is None:
+                z_score = self._compute_z_score(green_token_count, num_tokens_scored)
+            score_dict.update(dict(p_value=self._compute_p_value(z_score)))
+        if return_green_token_mask: 
+            raise("Please make sure return_green_token_mask is False")
+            score_dict.update(dict(green_token_mask=green_token_mask.tolist()))
+        if return_z_at_T:
+            raise("Not emplemented.")
+            # Score z_at_T separately:
+            sizes = torch.arange(1, len(green_unique) + 1)
+            seq_z_score_enum = torch.cumsum(green_unique, dim=0) - self.gamma * sizes
+            seq_z_score_denom = torch.sqrt(sizes * self.gamma * (1 - self.gamma))
+            z_score_at_effective_T = seq_z_score_enum / seq_z_score_denom
+            z_score_at_T = z_score_at_effective_T[offsets]
+            assert torch.isclose(z_score_at_T[-1], torch.tensor(z_score))
+
+            score_dict.update(dict(z_score_at_T=z_score_at_T))
+
+        return score_dict
+
+    def detect(
+        self,
+        text: str = None,
+        prompt = None,
+        tokenized_text: list[int] = None,
+        window_size: str = None,
+        window_stride: int = None,
+        return_prediction: bool = True,
+        return_scores: bool = True,
+        z_threshold: float = None,
+        convert_to_float: bool = False,
+        **kwargs,
+    ) -> dict:
+        """Scores a given string of text and returns a dictionary of results."""
+
+        assert (text is not None) ^ (
+            tokenized_text is not None
+        ), "Must pass either the raw or tokenized string"
+        if return_prediction:
+            kwargs[
+                "return_p_value"
+            ] = True  # to return the "confidence":=1-p of positive detections
+
+        # run optional normalizers on text
+        for normalizer in self.normalizers:
+            text = normalizer(text)
+        if len(self.normalizers) > 0:
+            print(f"Text after normalization:\n\n{text}\n")
+
+        if tokenized_text is None:
+            assert self.tokenizer is not None, (
+                "Watermark detection on raw string ",
+                "requires an instance of the tokenizer ",
+                "that was used at generation time.",
+            )
+            tokenized_text = self.tokenizer(text, return_tensors="pt", add_special_tokens=False)[
+                "input_ids"
+            ][0].to(self.device)
+            tokenized_prompt = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False)[
+                "input_ids"
+            ][0].to(self.device)
+            if tokenized_text[0] == self.tokenizer.bos_token_id:
+                tokenized_text = tokenized_text[1:]
+            if tokenized_prompt[0] == self.tokenizer.bos_token_id:
+                tokenized_prompt = tokenized_prompt[1:]
+        else:
+            # input("check tokenizer")
+            # try to remove the bos_tok at beginning if it's there
+            if (self.tokenizer is not None) and (tokenized_text[0] == self.tokenizer.bos_token_id):
+                tokenized_text = tokenized_text[1:]
+
+        # call score method
+        output_dict = {}
+
+        if window_size is not None:
+            # assert window_size <= len(tokenized_text) cannot assert for all new types
+            score_dict = self._score_sequence_window(
+                tokenized_text,
+                window_size=window_size,
+                window_stride=window_stride,
+                **kwargs,
+            )
+            output_dict.update(score_dict)
+        else:
+            score_dict = self._score_sequence(tokenized_text, tokenized_prompt=tokenized_prompt, **kwargs)
+        if return_scores:
+            output_dict.update(score_dict)
+        # if passed return_prediction then perform the hypothesis test and return the outcome
+        if return_prediction:
+            z_threshold = z_threshold if z_threshold else self.z_threshold
+            assert (
+                z_threshold is not None
+            ), "Need a threshold in order to decide outcome of detection test"
+            output_dict["prediction"] = score_dict["z_score"] > z_threshold
+            if output_dict["prediction"]:
+                output_dict["confidence"] = 1 - score_dict["p_value"]
+
+        # convert any numerical values to float if requested
+        if convert_to_float:
+            for key, value in output_dict.items():
+                if isinstance(value, int):
+                    output_dict[key] = float(value)
+
+        return output_dict
 
 ##########################################################################
 # Ngram iteration from nltk, extracted to remove the dependency

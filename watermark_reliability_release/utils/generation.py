@@ -159,10 +159,13 @@ def load_mlp_model(args):
     else:
         device = "cpu"
 
-    model = CLModel()
+    model = CLModel(encoder_dim=args.cl_encoder_dim)
     model.load_state_dict(torch.load(args.cl_mlp_model_path))
     model = model.to(device)
     model.eval()
+    # print(args.cl_mlp_model_path)
+    # print(model)
+    # input("check")
 
     return model
 

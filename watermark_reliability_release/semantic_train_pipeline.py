@@ -113,7 +113,7 @@ def main(args):
     import torch.optim as optim
     from utils.contrastive import CLModel, contrastive_train_batch, infoNCE_loss
     from torch.utils.data import DataLoader
-    cl_mlp = CLModel(2560, feat_dim=args.cl_mlp_feat_dim).to(device)
+    cl_mlp = CLModel(args.encoder_dim, feat_dim=args.cl_mlp_feat_dim).to(device)
     optimizer = optim.Adam(cl_mlp.parameters(), lr=args.cl_lr, weight_decay=1e-6)
     # optimizer = optim.SGD(cl_mlp.parameters(), lr=0.05, weight_decay=1e-4, momentum=0.9)
 
@@ -230,6 +230,12 @@ if __name__ == "__main__":
         "--cl_epochs",
         type=int,
         default=50,
+    )
+    parser.add_argument(
+        encoder_dim
+        "--encoder_dim",
+        type=int,
+        default=2560,
     )
     parser.add_argument(
         "--cl_mlp_feat_dim",

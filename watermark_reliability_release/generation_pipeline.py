@@ -600,6 +600,11 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
+        "--cl_encoder_dim",
+        type=int,
+        default=2560,
+    )
+    parser.add_argument(
         "--delta",
         type=float,
         default=2.0,
