@@ -79,7 +79,10 @@ def simple_skip_prf(input_ids: torch.LongTensor, salt_key: int, k=2) -> int:
     return hashint(salt_key * input_ids[::k]).prod().item()
 
 def sem_prf(hidden_embeddings: torch.LongTensor, salt_key:int, cl_mlp) -> int:
-    xy = F.normalize(cl_mlp(hidden_embeddings[-1:, :]), p=2, dim=1)
+    if len(hidden_embeddings.shape) == 2:
+        xy = F.normalize(cl_mlp(hidden_embeddings[-1:, :]), p=2, dim=1)
+    elif len(hidden_embeddings.shape) == 3:
+        xy = F.normalize(cl_mlp(hidden_embeddings[:, -1, :]), p=2, dim=1)
     # xy = cl_mlp(hidden_embeddings[-1:, :])
     if xy[0,1] == 0:
         if xy[0,0] > 0:

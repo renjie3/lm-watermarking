@@ -55,6 +55,11 @@ def contrastive_train_batch(net, pos_1, pos_2, train_optimizer, temperature, pyt
     
     out_1 = net(pos_1)
     out_2 = net(pos_2)
+
+    for i in range(10):
+        print(out_1[i])
+        print(out_2[i])
+        input("check")
     
     out = torch.cat([out_1, out_2], dim=0)
     

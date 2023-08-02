@@ -114,6 +114,9 @@ def main(args):
     from utils.contrastive import CLModel, contrastive_train_batch, infoNCE_loss
     from torch.utils.data import DataLoader
     cl_mlp = CLModel(args.encoder_dim, feat_dim=args.cl_mlp_feat_dim).to(device)
+    cl_mlp.load_state_dict(torch.load("/egr/research-dselab/renjie3/renjie/LLM/watermark_LLM/lm-watermarking/watermark_reliability_release/results/cl_model/cl_model_01_2_2560.pt"))
+    cl_mlp = cl_mlp.to(device)
+    cl_mlp.eval()
     optimizer = optim.Adam(cl_mlp.parameters(), lr=args.cl_lr, weight_decay=1e-6)
     # optimizer = optim.SGD(cl_mlp.parameters(), lr=0.05, weight_decay=1e-4, momentum=0.9)
 
@@ -232,7 +235,6 @@ if __name__ == "__main__":
         default=50,
     )
     parser.add_argument(
-        encoder_dim
         "--encoder_dim",
         type=int,
         default=2560,

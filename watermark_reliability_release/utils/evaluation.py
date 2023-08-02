@@ -177,29 +177,30 @@ def load_detector(args):
         cl_mlp.eval()
         # input("check")
 
-    # watermark_detector = WatermarkDetector(
-    #     vocab=list(tokenizer.get_vocab().values()),
-    #     gamma=args.gamma,
-    #     seeding_scheme=args.seeding_scheme,
-    #     device=device,
-    #     tokenizer=tokenizer,
-    #     z_threshold=args.detection_z_threshold,
-    #     normalizers=args.normalizers,
-    #     ignore_repeated_ngrams=args.ignore_repeated_ngrams,
-    # )
-
-    watermark_detector = SemWatermarkDetector(
-        decoder=model.model.decoder,
-        cl_mlp=cl_mlp,
-        vocab=list(tokenizer.get_vocab().values()),
-        gamma=args.gamma,
-        seeding_scheme=args.seeding_scheme,
-        device=device,
-        tokenizer=tokenizer,
-        z_threshold=args.detection_z_threshold,
-        normalizers=args.normalizers,
-        ignore_repeated_ngrams=args.ignore_repeated_ngrams,
-    )
+    if "sem" in args.seeding_scheme:
+        watermark_detector = SemWatermarkDetector(
+            decoder=model.model.decoder,
+            cl_mlp=cl_mlp,
+            vocab=list(tokenizer.get_vocab().values()),
+            gamma=args.gamma,
+            seeding_scheme=args.seeding_scheme,
+            device=device,
+            tokenizer=tokenizer,
+            z_threshold=args.detection_z_threshold,
+            normalizers=args.normalizers,
+            ignore_repeated_ngrams=args.ignore_repeated_ngrams,
+        )
+    else:
+        watermark_detector = WatermarkDetector(
+            vocab=list(tokenizer.get_vocab().values()),
+            gamma=args.gamma,
+            seeding_scheme=args.seeding_scheme,
+            device=device,
+            tokenizer=tokenizer,
+            z_threshold=args.detection_z_threshold,
+            normalizers=args.normalizers,
+            ignore_repeated_ngrams=args.ignore_repeated_ngrams,
+        )
 
     return watermark_detector
 
@@ -230,16 +231,27 @@ def compute_z_score(
         error = True
     else:
         # try:
-        score_dict = watermark_detector.detect(
-            input_text,
-            prompt=prompt,
-            window_size=window_size,
-            window_stride=window_stride,
-            return_green_token_mask=return_green_token_mask,
-            return_prediction=False,  # this conversion to "decision" only desired in demo context
-            convert_to_float=True,  # this helps with integrity under NaNs
-            return_z_at_T=args.compute_scores_at_T,
-        )
+        if "sem" in args.seeding_scheme:
+            score_dict = watermark_detector.detect(
+                input_text,
+                prompt=prompt,
+                window_size=window_size,
+                window_stride=window_stride,
+                return_green_token_mask=return_green_token_mask,
+                return_prediction=False,  # this conversion to "decision" only desired in demo context
+                convert_to_float=True,  # this helps with integrity under NaNs
+                return_z_at_T=args.compute_scores_at_T,
+            )
+        else:
+            score_dict = watermark_detector.detect(
+                input_text,
+                window_size=window_size,
+                window_stride=window_stride,
+                return_green_token_mask=return_green_token_mask,
+                return_prediction=False,  # this conversion to "decision" only desired in demo context
+                convert_to_float=True,  # this helps with integrity under NaNs
+                return_z_at_T=args.compute_scores_at_T,
+            )
         # except Exception as e:
         #     print(e)
         #     error = True

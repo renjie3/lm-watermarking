@@ -27,7 +27,7 @@ from transformers import LogitsProcessor
 
 from normalizers import normalization_strategy_lookup
 from alternative_prf_schemes import prf_lookup, seeding_scheme_lookup
-
+import torch.nn.functional as F
 
 class WatermarkBase:
     def __init__(
@@ -302,8 +302,11 @@ class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
         #         f"seeding_scheme requires at least a {self.context_width} token prefix to seed the RNG."
         #     )
 
+        # print(hidden_embeddings.shape)
+        # input("check hidden_embeddings shape generation")
+
         prf_key = prf_lookup[self.prf_type](
-                hidden_embeddings=hidden_embeddings, salt_key=self.hash_key, cl_mlp=cl_mlp
+                hidden_embeddings=F.normalize(hidden_embeddings, p=2, dim=1), salt_key=self.hash_key, cl_mlp=cl_mlp
             )
         # print("check2")
         # enable for long, interesting streams of pseudorandom numbers: print(prf_key)
@@ -385,7 +388,7 @@ class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
                 if "sem" in self.prf_type:
                     greenlist_ids = self._sem_get_greenlist_ids(hidden_embeddings_seq, self.cl_mlp)
                 else:
-                    self._get_greenlist_ids(input_seq)
+                    greenlist_ids = self._get_greenlist_ids(input_seq)
             list_of_greenlist_ids[b_idx] = greenlist_ids
 
             # logic for computing and storing spike entropies for analysis
@@ -875,8 +878,9 @@ class SemWatermarkDetector(WatermarkDetector):
         #         f"seeding_scheme requires at least a {self.context_width} token prefix to seed the RNG."
         #     )
 
+
         prf_key = prf_lookup[self.prf_type](
-                hidden_embeddings=hidden_embeddings, salt_key=self.hash_key, cl_mlp=cl_mlp
+                hidden_embeddings=F.normalize(hidden_embeddings, p=2, dim=1), salt_key=self.hash_key, cl_mlp=cl_mlp
             )
         # print("check2")
         # enable for long, interesting streams of pseudorandom numbers: print(prf_key)
@@ -911,7 +915,10 @@ class SemWatermarkDetector(WatermarkDetector):
 
         torch.cuda.empty_cache()
         # print(output.last_hidden_state.shape)
-        greenlist_ids = self._sem_get_greenlist_ids(output.last_hidden_state[:, -1, :], self.cl_mlp)
+        # print(output.last_hidden_state.shape)
+        # print(output.last_hidden_state[:, -1, :].shape)
+        # input("check last_hidden_state")
+        greenlist_ids = self._sem_get_greenlist_ids(output.last_hidden_state[0, :, :], self.cl_mlp)
         current_token_result = True if target in greenlist_ids else False
         return current_token_result, output.past_key_values
 
