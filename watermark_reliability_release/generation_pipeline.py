@@ -195,6 +195,8 @@ def main(args):
         )
     else:
         gen_kwargs.update(dict(num_beams=args.num_beams))
+        # return_dict_in_generate
+    gen_kwargs.update(dict(return_dict_in_generate=True))
 
     print("gen_kwargs: ", gen_kwargs)
     # input("check")
@@ -331,6 +333,11 @@ def main(args):
             print(ex["no_wm_output"])
             print(f"\nw_wm_output: ")
             print(ex["w_wm_output"])
+
+            print(f"\nw_wm_output_green: ")
+            print(ex["w_wm_output_green"])
+            print(f"\nw_wm_output_seed: ")
+            print(ex["w_wm_output_seed"])
 
         processed_examples.append(ex)
 

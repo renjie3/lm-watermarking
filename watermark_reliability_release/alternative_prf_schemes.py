@@ -93,12 +93,14 @@ def sem_prf(hidden_embeddings: torch.LongTensor, salt_key:int, cl_mlp) -> int:
         theta = torch.atan(xy[0,1] / (xy[0,0] + 1e-9)).item()
         if xy[0,1] < 0:
             theta += np.pi
+
+        theta += np.pi / 2
     
     # print(theta / (2*np.pi) * 10)
     a = torch.tensor([round(theta / (2*np.pi) * 10)])
     # print("check sem_prf")
     # import pdb; pdb.set_trace()
-    return hashint(salt_key * a).item()
+    return hashint(salt_key * a).item(), a
 
 def skipgram_prf(input_ids: torch.LongTensor, salt_key: int) -> int:
     # maximum distance skipgram within context

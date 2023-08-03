@@ -591,17 +591,21 @@ def generate(
     with torch.no_grad():
         if args.generation_seed is not None:
             torch.manual_seed(args.generation_seed)
-        output_without_watermark = generate_without_watermark(input_ids=input_ids)
+        output_without_watermark_output_dict = generate_without_watermark(input_ids=input_ids)
+        output_without_watermark = output_without_watermark_output_dict.sequences
 
         # return output_without_watermark
 
         if args.generation_seed is not None:
             torch.manual_seed(args.generation_seed)
-        output_with_watermark = generate_with_watermark(input_ids=input_ids)
-        print(type(output_with_watermark))
-        input("check print(type(output_with_watermark))")
-        import pdb; pdb.set_trace()
-        output_with_watermark = output_with_watermark
+        output_with_watermark_output_dict = generate_with_watermark(input_ids=input_ids)
+        output_with_watermark = output_with_watermark_output_dict.sequences
+        # print(output_with_watermark_output_dict.keys())
+        # print(type(output_with_watermark))
+        # input("check print(type(output_with_watermark))")
+        # import pdb; pdb.set_trace()
+        # print("fixme")
+        # output_with_watermark = output_with_watermark
 
     if args.is_decoder_only_model:
         # need to isolate the newly generated tokens
@@ -624,8 +628,13 @@ def generate(
             "w_wm_output_length": (output_with_watermark != tokenizer.pad_token_id)
             .sum(dim=-1)
             .tolist(),
+            "w_wm_output_green": output_with_watermark_output_dict.wm_green.tolist(),
+            "w_wm_output_seed": output_with_watermark_output_dict.wm_seed.tolist(),
         }
     )
+
+
+    # import pdb; pdb.set_trace()
 
     if watermark_processor.spike_entropies is not None:
         examples["spike_entropies"] = watermark_processor._get_and_clear_stored_spike_ents()

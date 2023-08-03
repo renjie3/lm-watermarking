@@ -15,7 +15,7 @@ echo "Running generation pipeline with output dir: $GENERATION_OUTPUT_DIR"
 
 # generation_pipeline.py semantic_train_pipeline
 
-CUDA_VISIBLE_DEVICES=5 HF_HOME="/egr/research-dselab/renjie3/renjie/LLM/cache" python generation_pipeline.py \
+CUDA_VISIBLE_DEVICES=3 HF_HOME="/egr/research-dselab/renjie3/renjie/LLM/cache" python generation_pipeline.py \
     --model_name facebook/opt-2.7b \
     --dataset_name=json_c4 \
     --dataset_config_name=realnewslike \
@@ -31,7 +31,7 @@ CUDA_VISIBLE_DEVICES=5 HF_HOME="/egr/research-dselab/renjie3/renjie/LLM/cache" p
     --run_name="$RUN_NAME"_gen \
     --wandb=False \
     --verbose=True \
-    --generation_batch_size=4 \
+    --generation_batch_size=2 \
     --stream_dataset=True \
     --load_fp16=False \
     --num_beams=1 \

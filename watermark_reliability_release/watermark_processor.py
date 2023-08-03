@@ -304,17 +304,23 @@ class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
 
         # print(hidden_embeddings.shape)
         # input("check hidden_embeddings shape generation")
-
-        prf_key = prf_lookup[self.prf_type](
-                hidden_embeddings=F.normalize(hidden_embeddings, p=2, dim=1), salt_key=self.hash_key, cl_mlp=cl_mlp
-            )
+        if "sem" in self.prf_type:
+            prf_key, a = prf_lookup[self.prf_type](
+                    hidden_embeddings=F.normalize(hidden_embeddings, p=2, dim=1), salt_key=self.hash_key, cl_mlp=cl_mlp
+                )
+        else:
+            prf_key = prf_lookup[self.prf_type](
+                    hidden_embeddings=F.normalize(hidden_embeddings, p=2, dim=1), salt_key=self.hash_key, cl_mlp=cl_mlp
+                )
         # print("check2")
         # enable for long, interesting streams of pseudorandom numbers: print(prf_key)
         self.rng.manual_seed(prf_key % (2**64 - 1))  # safeguard against overflow from long
 
+        return a
+
     def _sem_get_greenlist_ids(self, hidden_embeddings: torch.LongTensor, cl_mlp) -> torch.LongTensor:
         """Seed rng based on local context width and use this information to generate ids on the green list."""
-        self._sem_seed_rng(hidden_embeddings=hidden_embeddings, cl_mlp=cl_mlp)
+        a = self._sem_seed_rng(hidden_embeddings=hidden_embeddings, cl_mlp=cl_mlp)
 
         greenlist_size = int(self.vocab_size * self.gamma)
         vocab_permutation = torch.randperm(
@@ -326,7 +332,7 @@ class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
             greenlist_ids = vocab_permutation[
                 (self.vocab_size - greenlist_size) :
             ]  # legacy behavior
-        return greenlist_ids
+        return greenlist_ids, a
 
     def _score_rejection_sampling(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor, tail_rule="fixed_compute"
@@ -342,10 +348,12 @@ class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
         sorted_scores, greedy_predictions = scores.sort(dim=-1, descending=True)
 
         final_greenlist = []
+        seed_list = None
         for idx, prediction_candidate in enumerate(greedy_predictions):
-            greenlist_ids = self._sem_get_greenlist_ids(
+            greenlist_ids, prf_seed = self._sem_get_greenlist_ids(
                 torch.cat([input_ids, prediction_candidate[None]], dim=0)
             )  # add candidate to prefix
+            seed_list = prf_seed
             if prediction_candidate in greenlist_ids:  # test for consistency
                 final_greenlist.append(prediction_candidate)
 
@@ -363,7 +371,8 @@ class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
                     break
             else:
                 pass  # do not break early
-        return torch.as_tensor(final_greenlist, device=input_ids.device)
+        raise("not sure whether it is right")
+        return torch.as_tensor(final_greenlist, device=input_ids.device), seed_list
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, hidden_embeddings: torch.FloatTensor) -> torch.FloatTensor:
         """Call with previous context as input_ids, and scores for next token."""
@@ -380,13 +389,15 @@ class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
 
         # input("check -0")
         list_of_greenlist_ids = [None for _ in input_ids]  # Greenlists could differ in length
+        list_of_prf_seed = []
         for b_idx, (input_seq, hidden_embeddings_seq) in enumerate(zip(input_ids, hidden_embeddings)):
             if self.self_salt:
                 # input("check call _score_rejection_sampling")
                 greenlist_ids = self._score_rejection_sampling(input_seq, scores[b_idx])
             else:
                 if "sem" in self.prf_type:
-                    greenlist_ids = self._sem_get_greenlist_ids(hidden_embeddings_seq, self.cl_mlp)
+                    greenlist_ids, prf_seed = self._sem_get_greenlist_ids(hidden_embeddings_seq, self.cl_mlp)
+                    list_of_prf_seed.append(prf_seed)
                 else:
                     greenlist_ids = self._get_greenlist_ids(input_seq)
             list_of_greenlist_ids[b_idx] = greenlist_ids
@@ -404,7 +415,7 @@ class SemWatermarkLogitsProcessor(WatermarkBase, LogitsProcessor):
             scores=scores, greenlist_mask=green_tokens_mask, greenlist_bias=self.delta
         )
 
-        return scores
+        return scores, list_of_greenlist_ids, list_of_prf_seed
 
 
 class WatermarkDetector(WatermarkBase):
@@ -879,16 +890,23 @@ class SemWatermarkDetector(WatermarkDetector):
         #     )
 
 
-        prf_key = prf_lookup[self.prf_type](
-                hidden_embeddings=F.normalize(hidden_embeddings, p=2, dim=1), salt_key=self.hash_key, cl_mlp=cl_mlp
-            )
+        if "sem" in self.prf_type:
+            prf_key, a = prf_lookup[self.prf_type](
+                    hidden_embeddings=F.normalize(hidden_embeddings, p=2, dim=1), salt_key=self.hash_key, cl_mlp=cl_mlp
+                )
+        else:
+            prf_key = prf_lookup[self.prf_type](
+                    hidden_embeddings=F.normalize(hidden_embeddings, p=2, dim=1), salt_key=self.hash_key, cl_mlp=cl_mlp
+                )
         # print("check2")
         # enable for long, interesting streams of pseudorandom numbers: print(prf_key)
         self.rng.manual_seed(prf_key % (2**64 - 1))  # safeguard against overflow from long
 
+        return a
+
     def _sem_get_greenlist_ids(self, hidden_embeddings: torch.LongTensor, cl_mlp) -> torch.LongTensor:
         """Seed rng based on local context width and use this information to generate ids on the green list."""
-        self._sem_seed_rng(hidden_embeddings=hidden_embeddings, cl_mlp=cl_mlp)
+        a = self._sem_seed_rng(hidden_embeddings=hidden_embeddings, cl_mlp=cl_mlp)
 
         greenlist_size = int(self.vocab_size * self.gamma)
         vocab_permutation = torch.randperm(
@@ -900,7 +918,7 @@ class SemWatermarkDetector(WatermarkDetector):
             greenlist_ids = vocab_permutation[
                 (self.vocab_size - greenlist_size) :
             ]  # legacy behavior
-        return greenlist_ids
+        return greenlist_ids, a
 
     # @lru_cache(maxsize=2**32)
     def _get_ngram_score_cached(self, prefix: torch.Tensor, target: int, past_key_values):
@@ -918,9 +936,10 @@ class SemWatermarkDetector(WatermarkDetector):
         # print(output.last_hidden_state.shape)
         # print(output.last_hidden_state[:, -1, :].shape)
         # input("check last_hidden_state")
-        greenlist_ids = self._sem_get_greenlist_ids(output.last_hidden_state[0, :, :], self.cl_mlp)
+        greenlist_ids, a = self._sem_get_greenlist_ids(output.last_hidden_state[0, :, :], self.cl_mlp)
+        # import pdb; pdb.set_trace()
         current_token_result = True if target in greenlist_ids else False
-        return current_token_result, output.past_key_values
+        return current_token_result, output.past_key_values, a
 
     def _score_ngrams_in_passage(self, input_ids: torch.Tensor, tokenized_prompt):
         """Core function to gather all ngrams in the input and compute their watermark."""
@@ -937,6 +956,7 @@ class SemWatermarkDetector(WatermarkDetector):
         # )
         # frequencies_table = collections.Counter(token_ngram_generator)
         ngram_to_watermark_lookup = []
+        detect_seed = []
         past_key_values = None
         for idx in range(len(input_ids)):
             torch.cuda.empty_cache()
@@ -950,6 +970,7 @@ class SemWatermarkDetector(WatermarkDetector):
             outputs = self._get_ngram_score_cached(prefix, target, past_key_values)
             del past_key_values
             past_key_values = outputs[1]
+            detect_seed.append(outputs[2])
             # print(past_key_values[0][0].dtype)
             # print(len(past_key_values))
             # print(len(past_key_values[0]))
@@ -958,7 +979,7 @@ class SemWatermarkDetector(WatermarkDetector):
 
         # input("check1")
 
-        return ngram_to_watermark_lookup
+        return ngram_to_watermark_lookup, detect_seed
 
     def _score_sequence(
         self,
@@ -972,7 +993,7 @@ class SemWatermarkDetector(WatermarkDetector):
         return_z_at_T: bool = True,
         return_p_value: bool = True,
     ):
-        ngram_to_watermark_lookup = self._score_ngrams_in_passage(input_ids, tokenized_prompt=tokenized_prompt)
+        ngram_to_watermark_lookup, detect_seed = self._score_ngrams_in_passage(input_ids, tokenized_prompt=tokenized_prompt)
         # green_token_mask, green_unique, offsets = self._get_green_at_T_booleans(
         #     input_ids, ngram_to_watermark_lookup
         # )
@@ -988,6 +1009,8 @@ class SemWatermarkDetector(WatermarkDetector):
 
         # HF-style output dictionary
         score_dict = dict()
+        score_dict.update(dict(detect_seed=detect_seed))
+        score_dict.update(dict(ngram_to_watermark_lookup=ngram_to_watermark_lookup))
         if return_num_tokens_scored:
             score_dict.update(dict(num_tokens_scored=num_tokens_scored))
         if return_num_green_tokens:
